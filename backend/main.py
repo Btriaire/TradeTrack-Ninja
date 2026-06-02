@@ -43,8 +43,23 @@ def health():
 def debug_env():
     import os
     key = os.getenv("GEMINI_API_KEY", "")
+    td  = os.getenv("TWELVE_DATA_KEY", "")
     return {
         "gemini_key_set": bool(key),
-        "gemini_key_preview": key[:8] + "..." if key else "VIDE",
-        "env_file": str(Path(__file__).parent / ".env"),
+        "twelve_data_key_set": bool(td),
+        "twelve_data_preview": td[:8] + "..." if td else "VIDE",
     }
+
+@app.get("/debug/td/{symbol}")
+def debug_td(symbol: str):
+    import os, httpx
+    key = os.getenv("TWELVE_DATA_KEY", "")
+    if not key:
+        return {"error": "TWELVE_DATA_KEY manquant"}
+    from services.yahoo_finance import _td_symbol
+    td_sym, exchange = _td_symbol(symbol)
+    r = httpx.get("https://api.twelvedata.com/time_series", params={
+        "symbol": td_sym, "exchange": exchange,
+        "interval": "1day", "outputsize": 5, "apikey": key
+    }, timeout=15)
+    return {"td_symbol": td_sym, "exchange": exchange, "response": r.json()}
