@@ -50,13 +50,13 @@ def debug_env():
         "twelve_data_preview": td[:8] + "..." if td else "VIDE",
     }
 
-@app.get("/debug/fh/{symbol}")
-def debug_finnhub(symbol: str):
-    from services.yahoo_finance import _fh_symbol, get_history
-    fh_sym = _fh_symbol(symbol)
+@app.get("/debug/av/{symbol}")
+def debug_alphavantage(symbol: str):
+    from services.yahoo_finance import _av_symbol, get_history
+    av_sym = _av_symbol(symbol)
     data   = get_history(symbol, "1mo")
     return {
-        "finnhub_symbol": fh_sym,
-        "candles_count":  len(data),
-        "last": data[-1] if data else None,
+        "av_symbol":     av_sym,
+        "candles_count": len(data),
+        "last":          data[-1] if data else None,
     }

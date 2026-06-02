@@ -1,15 +1,13 @@
 """
-Service données financières — Finnhub API
-Gratuit : 60 req/min, supporte Euronext Paris, cloud-friendly.
-https://finnhub.io/register (gratuit, sans carte bancaire)
+Service données financières — Alpha Vantage
+- Gratuit : 25 req/jour, 5 req/min
+- Supporte Euronext Paris (MC.PAR, AIR.PAR...)
+- Cache mémoire 30 min pour économiser les appels
 """
-import os
-import httpx
-import math
-import time
-import pandas as pd
+import os, httpx, math, time, pandas as pd
 from datetime import datetime, timedelta
 from typing import Optional
+from functools import lru_cache
 
 try:
     import ta
@@ -17,21 +15,26 @@ try:
 except Exception:
     TA_AVAILABLE = False
 
-FINNHUB_BASE = "https://finnhub.io/api/v1"
+AV_BASE = "https://www.alphavantage.co/query"
+
+# Cache simple : {cache_key: (timestamp, data)}
+_cache: dict = {}
+CACHE_TTL = 1800  # 30 minutes
+
+# Conversion Yahoo Finance → Alpha Vantage suffixes
+SUFFIX_MAP = {
+    ".PA": ".PAR",   # Euronext Paris
+    ".AS": ".AMS",   # Amsterdam
+    ".BR": ".BRU",   # Bruxelles
+    ".DE": ".DEX",   # Xetra Frankfurt
+    ".L":  ".LON",   # London
+    ".MI": ".MIL",   # Milan
+    ".MC": ".MAD",   # Madrid
+}
 
 PERIOD_DAYS = {
     "1mo": 30, "3mo": 90, "6mo": 180,
     "1y": 365, "2y": 730, "5y": 1825
-}
-
-# Conversion Yahoo Finance → Finnhub exchange prefix
-EXCHANGE_MAP = {
-    ".PA": "EURONEXT",   # Paris
-    ".AS": "EURONEXT",   # Amsterdam
-    ".BR": "EURONEXT",   # Bruxelles
-    ".DE": "XETRA",      # Frankfurt
-    ".L":  "LSE",        # Londres
-    ".MI": "MIL",        # Milan
 }
 
 
@@ -43,101 +46,120 @@ def _clean(val) -> Optional[float]:
         return None
 
 
-def _fh_symbol(symbol: str) -> str:
-    """MC.PA → EURONEXT:MC"""
+def _av_symbol(symbol: str) -> str:
+    """MC.PA → MC.PAR"""
     s = symbol.upper()
-    for suffix, exchange in EXCHANGE_MAP.items():
-        if s.endswith(suffix):
-            return f"{exchange}:{s[:-len(suffix)]}"
-    return s  # US stocks: AAPL, MSFT...
+    for yf_sfx, av_sfx in SUFFIX_MAP.items():
+        if s.endswith(yf_sfx):
+            return s[:-len(yf_sfx)] + av_sfx
+    return s  # US stocks unchanged
 
 
 def _key() -> str:
-    return os.getenv("FINNHUB_KEY", "")
+    return os.getenv("ALPHA_VANTAGE_KEY", "")
 
 
-def get_quote(symbol: str) -> dict:
-    key = _key()
-    if not key:
-        return {"symbol": symbol, "price": None, "error": "FINNHUB_KEY manquant"}
-    try:
-        fh_sym = _fh_symbol(symbol)
-        r = httpx.get(f"{FINNHUB_BASE}/quote", params={
-            "symbol": fh_sym, "token": key
-        }, timeout=10)
-        q = r.json()
-        price = _clean(q.get("c"))   # current price
-        prev  = _clean(q.get("pc"))  # previous close
-        change = _clean(q.get("d"))  # change
-        pct    = _clean(q.get("dp")) # percent change
-        return {
-            "symbol":     symbol,
-            "price":      price,
-            "prev_close": prev,
-            "change":     change,
-            "change_pct": pct,
-            "volume":     None,
-            "market_cap": None,
-            "currency":   "EUR",
-        }
-    except Exception as e:
-        print(f"[FH QUOTE ERROR] {symbol}: {e}")
-        return {"symbol": symbol, "price": None, "error": str(e)}
+def _cached(key: str):
+    entry = _cache.get(key)
+    if entry and (time.time() - entry[0]) < CACHE_TTL:
+        return entry[1]
+    return None
+
+
+def _store(key: str, data):
+    _cache[key] = (time.time(), data)
+    return data
 
 
 def get_history(symbol: str, period: str = "6mo", interval: str = "1d") -> list[dict]:
+    cache_key = f"history:{symbol}:{period}"
+    cached = _cached(cache_key)
+    if cached is not None:
+        return cached
+
     key = _key()
     if not key:
+        print("[AV] ALPHA_VANTAGE_KEY manquant")
         return []
+
+    av_sym = _av_symbol(symbol)
+    days   = PERIOD_DAYS.get(period, 180)
+    output = "compact" if days <= 100 else "full"
+
     try:
-        fh_sym = _fh_symbol(symbol)
-        days   = PERIOD_DAYS.get(period, 180)
-        t_to   = int(time.time())
-        t_from = int((datetime.now() - timedelta(days=days)).timestamp())
-
-        # Finnhub resolution: D=daily, W=weekly, M=monthly
-        res_map = {"1d": "D", "1wk": "W", "1mo": "M"}
-        resolution = res_map.get(interval, "D")
-
-        r = httpx.get(f"{FINNHUB_BASE}/stock/candle", params={
-            "symbol":     fh_sym,
-            "resolution": resolution,
-            "from":       t_from,
-            "to":         t_to,
-            "token":      key,
+        r = httpx.get(AV_BASE, params={
+            "function":   "TIME_SERIES_DAILY",
+            "symbol":     av_sym,
+            "outputsize": output,
+            "apikey":     key,
         }, timeout=15)
         data = r.json()
 
-        if data.get("s") == "no_data":
-            print(f"[FH HISTORY] No data for {symbol} ({fh_sym})")
+        if "Note" in data:
+            print(f"[AV] Rate limit: {data['Note']}")
+            return []
+        if "Error Message" in data:
+            print(f"[AV ERROR] {data['Error Message']}")
             return []
 
+        series = data.get("Time Series (Daily)", {})
+        cutoff = datetime.now() - timedelta(days=days)
         candles = []
-        timestamps = data.get("t", [])
-        opens      = data.get("o", [])
-        highs      = data.get("h", [])
-        lows       = data.get("l", [])
-        closes     = data.get("c", [])
-        volumes    = data.get("v", [])
-
-        for i, ts in enumerate(timestamps):
-            o = _clean(opens[i])
-            h = _clean(highs[i])
-            l = _clean(lows[i])
-            c = _clean(closes[i])
+        for date_str, values in sorted(series.items()):
+            dt = datetime.strptime(date_str, "%Y-%m-%d")
+            if dt < cutoff:
+                continue
+            o = _clean(values.get("1. open"))
+            h = _clean(values.get("2. high"))
+            l = _clean(values.get("3. low"))
+            c = _clean(values.get("4. close"))
+            v = values.get("5. volume", "0")
             if None in (o, h, l, c):
                 continue
             candles.append({
-                "time":   datetime.fromtimestamp(ts).strftime("%Y-%m-%d"),
-                "open":   o, "high": h, "low": l, "close": c,
-                "volume": int(volumes[i]) if i < len(volumes) else 0,
+                "time": date_str, "open": o, "high": h,
+                "low": l, "close": c, "volume": int(v),
             })
 
-        print(f"[FH] {symbol} → {fh_sym} : {len(candles)} bougies")
-        return candles
+        print(f"[AV] {symbol} → {av_sym} : {len(candles)} bougies")
+        return _store(cache_key, candles)
+
     except Exception as e:
-        print(f"[FH HISTORY ERROR] {symbol}: {e}")
+        print(f"[AV HISTORY ERROR] {symbol}: {e}")
         return []
+
+
+def get_quote(symbol: str) -> dict:
+    cache_key = f"quote:{symbol}"
+    cached = _cached(cache_key)
+    if cached is not None:
+        return cached
+
+    key = _key()
+    if not key:
+        return {"symbol": symbol, "price": None, "error": "ALPHA_VANTAGE_KEY manquant"}
+
+    av_sym = _av_symbol(symbol)
+    try:
+        r = httpx.get(AV_BASE, params={
+            "function": "GLOBAL_QUOTE",
+            "symbol":   av_sym,
+            "apikey":   key,
+        }, timeout=10)
+        q = r.json().get("Global Quote", {})
+        price = _clean(q.get("05. price"))
+        prev  = _clean(q.get("08. previous close"))
+        change = _clean(q.get("09. change"))
+        pct    = _clean(q.get("10. change percent", "0").replace("%", ""))
+        result = {
+            "symbol": symbol, "price": price, "prev_close": prev,
+            "change": change, "change_pct": pct,
+            "volume": q.get("06. volume"), "market_cap": None, "currency": "EUR",
+        }
+        return _store(cache_key, result)
+    except Exception as e:
+        print(f"[AV QUOTE ERROR] {symbol}: {e}")
+        return {"symbol": symbol, "price": None, "error": str(e)}
 
 
 def get_indicators(symbol: str, period: str = "6mo") -> dict:
@@ -167,11 +189,11 @@ def get_indicators(symbol: str, period: str = "6mo") -> dict:
         return {}
 
 
-def _signal(rsi, macd, macd_signal):
+def _signal(rsi, macd, macd_sig):
     b = m = 0
     if rsi < 40: b += 1
     elif rsi > 65: m += 1
-    if macd > macd_signal: b += 1
+    if macd > macd_sig: b += 1
     else: m += 1
     return "HAUSSIER" if b > m else "BAISSIER" if m > b else "NEUTRE"
 
