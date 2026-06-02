@@ -16,6 +16,24 @@ except Exception:
 
 TWELVE_DATA_BASE = "https://api.twelvedata.com"
 
+# Conversion suffixes Yahoo Finance → Twelve Data exchange
+EXCHANGE_MAP = {
+    ".PA": ("EURONEXT", "EUR"),  # Paris
+    ".AS": ("EURONEXT", "EUR"),  # Amsterdam
+    ".BR": ("EURONEXT", "EUR"),  # Bruxelles
+    ".DE": ("XETRA",    "EUR"),  # Frankfurt
+    ".L":  ("LSE",      "GBP"),  # Londres
+    ".MI": ("MIL",      "EUR"),  # Milan
+    ".MC": ("BME",      "EUR"),  # Madrid
+}
+
+def _td_symbol(symbol: str) -> tuple[str, str]:
+    """Convertit MC.PA → ('MC', 'EURONEXT')"""
+    for suffix, (exchange, _) in EXCHANGE_MAP.items():
+        if symbol.upper().endswith(suffix):
+            return symbol[:-len(suffix)].upper(), exchange
+    return symbol.upper(), "NASDAQ"  # US par défaut
+
 
 def _clean(val) -> Optional[float]:
     try:
@@ -36,19 +54,16 @@ def get_quote(symbol: str) -> dict:
     if not key:
         return _yf_quote(symbol)
     try:
-        # Twelve Data — quote en temps réel
-        r = httpx.get(f"{TWELVE_DATA_BASE}/price", params={
-            "symbol": symbol, "apikey": key
-        }, timeout=10)
-        data = r.json()
-        price = _clean(data.get("price"))
-
+        td_sym, exchange = _td_symbol(symbol)
         # Stats complémentaires
         r2 = httpx.get(f"{TWELVE_DATA_BASE}/quote", params={
-            "symbol": symbol, "apikey": key
+            "symbol": td_sym, "exchange": exchange, "apikey": key
         }, timeout=10)
         q = r2.json()
+        if q.get("status") == "error":
+            raise Exception(q.get("message", "TD error"))
 
+        price = _clean(q.get("close"))
         prev  = _clean(q.get("previous_close"))
         change = _clean(q.get("change"))
         pct    = _clean(q.get("percent_change"))
@@ -80,8 +95,10 @@ def get_history(symbol: str, period: str = "6mo", interval: str = "1d") -> list[
         interval_map = {"1d": "1day", "1wk": "1week", "1mo": "1month"}
         td_interval = interval_map.get(interval, "1day")
 
+        td_sym, exchange = _td_symbol(symbol)
         r = httpx.get(f"{TWELVE_DATA_BASE}/time_series", params={
-            "symbol":     symbol,
+            "symbol":     td_sym,
+            "exchange":   exchange,
             "interval":   td_interval,
             "outputsize": outputsize,
             "apikey":     key,
