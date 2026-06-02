@@ -1,11 +1,12 @@
 """
-Service données financières — Stooq (gratuit, sans clé API, cloud-friendly)
-Fallback yfinance en dev local.
+Service données financières — Finnhub API
+Gratuit : 60 req/min, supporte Euronext Paris, cloud-friendly.
+https://finnhub.io/register (gratuit, sans carte bancaire)
 """
+import os
 import httpx
 import math
-import io
-import csv
+import time
 import pandas as pd
 from datetime import datetime, timedelta
 from typing import Optional
@@ -16,22 +17,21 @@ try:
 except Exception:
     TA_AVAILABLE = False
 
-HEADERS = {"User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) Chrome/120.0"}
-
-# Conversion Yahoo Finance → Stooq suffixes
-STOOQ_SUFFIX = {
-    ".PA": ".fr",   # Euronext Paris
-    ".AS": ".nl",   # Amsterdam
-    ".BR": ".be",   # Bruxelles
-    ".DE": ".de",   # Xetra
-    ".L":  ".uk",   # London
-    ".MI": ".it",   # Milan
-    ".MC": ".es",   # Madrid
-}
+FINNHUB_BASE = "https://finnhub.io/api/v1"
 
 PERIOD_DAYS = {
     "1mo": 30, "3mo": 90, "6mo": 180,
     "1y": 365, "2y": 730, "5y": 1825
+}
+
+# Conversion Yahoo Finance → Finnhub exchange prefix
+EXCHANGE_MAP = {
+    ".PA": "EURONEXT",   # Paris
+    ".AS": "EURONEXT",   # Amsterdam
+    ".BR": "EURONEXT",   # Bruxelles
+    ".DE": "XETRA",      # Frankfurt
+    ".L":  "LSE",        # Londres
+    ".MI": "MIL",        # Milan
 }
 
 
@@ -43,69 +43,101 @@ def _clean(val) -> Optional[float]:
         return None
 
 
-def _stooq_sym(symbol: str) -> str:
+def _fh_symbol(symbol: str) -> str:
+    """MC.PA → EURONEXT:MC"""
     s = symbol.upper()
-    for yf, stooq in STOOQ_SUFFIX.items():
-        if s.endswith(yf):
-            return s[:-len(yf)].lower() + stooq
-    return s.lower()  # US stocks
+    for suffix, exchange in EXCHANGE_MAP.items():
+        if s.endswith(suffix):
+            return f"{exchange}:{s[:-len(suffix)]}"
+    return s  # US stocks: AAPL, MSFT...
 
 
-def get_history(symbol: str, period: str = "6mo", interval: str = "1d") -> list[dict]:
-    sym = _stooq_sym(symbol)
-    days = PERIOD_DAYS.get(period, 180)
-    d2 = datetime.now()
-    d1 = d2 - timedelta(days=days)
-    url = (
-        f"https://stooq.com/q/d/l/"
-        f"?s={sym}"
-        f"&d1={d1.strftime('%Y%m%d')}"
-        f"&d2={d2.strftime('%Y%m%d')}"
-        f"&i=d"
-    )
-    try:
-        r = httpx.get(url, headers=HEADERS, timeout=12, follow_redirects=True)
-        reader = csv.DictReader(io.StringIO(r.text))
-        result = []
-        for row in reader:
-            o = _clean(row.get("Open"))
-            h = _clean(row.get("High"))
-            l = _clean(row.get("Low"))
-            c = _clean(row.get("Close"))
-            if None in (o, h, l, c):
-                continue
-            result.append({
-                "time":   row.get("Date", "")[:10],
-                "open":   o, "high": h, "low": l, "close": c,
-                "volume": int(float(row.get("Volume") or 0)),
-            })
-        print(f"[STOOQ] {symbol} → {sym} : {len(result)} bougies")
-        return result
-    except Exception as e:
-        print(f"[STOOQ ERROR] {symbol}: {e}")
-        return []
+def _key() -> str:
+    return os.getenv("FINNHUB_KEY", "")
 
 
 def get_quote(symbol: str) -> dict:
-    candles = get_history(symbol, "5d")
-    if not candles:
-        return {"symbol": symbol, "price": None}
-    last = candles[-1]
-    prev = candles[-2] if len(candles) >= 2 else None
-    price = last["close"]
-    prev_close = prev["close"] if prev else None
-    change = round(price - prev_close, 2) if prev_close else None
-    pct = round((change / prev_close) * 100, 2) if prev_close and change else None
-    return {
-        "symbol":     symbol,
-        "price":      price,
-        "prev_close": prev_close,
-        "change":     change,
-        "change_pct": pct,
-        "volume":     last["volume"],
-        "market_cap": None,
-        "currency":   "EUR",
-    }
+    key = _key()
+    if not key:
+        return {"symbol": symbol, "price": None, "error": "FINNHUB_KEY manquant"}
+    try:
+        fh_sym = _fh_symbol(symbol)
+        r = httpx.get(f"{FINNHUB_BASE}/quote", params={
+            "symbol": fh_sym, "token": key
+        }, timeout=10)
+        q = r.json()
+        price = _clean(q.get("c"))   # current price
+        prev  = _clean(q.get("pc"))  # previous close
+        change = _clean(q.get("d"))  # change
+        pct    = _clean(q.get("dp")) # percent change
+        return {
+            "symbol":     symbol,
+            "price":      price,
+            "prev_close": prev,
+            "change":     change,
+            "change_pct": pct,
+            "volume":     None,
+            "market_cap": None,
+            "currency":   "EUR",
+        }
+    except Exception as e:
+        print(f"[FH QUOTE ERROR] {symbol}: {e}")
+        return {"symbol": symbol, "price": None, "error": str(e)}
+
+
+def get_history(symbol: str, period: str = "6mo", interval: str = "1d") -> list[dict]:
+    key = _key()
+    if not key:
+        return []
+    try:
+        fh_sym = _fh_symbol(symbol)
+        days   = PERIOD_DAYS.get(period, 180)
+        t_to   = int(time.time())
+        t_from = int((datetime.now() - timedelta(days=days)).timestamp())
+
+        # Finnhub resolution: D=daily, W=weekly, M=monthly
+        res_map = {"1d": "D", "1wk": "W", "1mo": "M"}
+        resolution = res_map.get(interval, "D")
+
+        r = httpx.get(f"{FINNHUB_BASE}/stock/candle", params={
+            "symbol":     fh_sym,
+            "resolution": resolution,
+            "from":       t_from,
+            "to":         t_to,
+            "token":      key,
+        }, timeout=15)
+        data = r.json()
+
+        if data.get("s") == "no_data":
+            print(f"[FH HISTORY] No data for {symbol} ({fh_sym})")
+            return []
+
+        candles = []
+        timestamps = data.get("t", [])
+        opens      = data.get("o", [])
+        highs      = data.get("h", [])
+        lows       = data.get("l", [])
+        closes     = data.get("c", [])
+        volumes    = data.get("v", [])
+
+        for i, ts in enumerate(timestamps):
+            o = _clean(opens[i])
+            h = _clean(highs[i])
+            l = _clean(lows[i])
+            c = _clean(closes[i])
+            if None in (o, h, l, c):
+                continue
+            candles.append({
+                "time":   datetime.fromtimestamp(ts).strftime("%Y-%m-%d"),
+                "open":   o, "high": h, "low": l, "close": c,
+                "volume": int(volumes[i]) if i < len(volumes) else 0,
+            })
+
+        print(f"[FH] {symbol} → {fh_sym} : {len(candles)} bougies")
+        return candles
+    except Exception as e:
+        print(f"[FH HISTORY ERROR] {symbol}: {e}")
+        return []
 
 
 def get_indicators(symbol: str, period: str = "6mo") -> dict:
