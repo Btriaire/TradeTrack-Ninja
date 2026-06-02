@@ -1,7 +1,11 @@
-import yfinance as yf
-import pandas as pd
-import requests
+"""
+Service de données financières — utilise Twelve Data API (gratuit, 800 req/jour)
+Fallback sur yfinance si TWELVE_DATA_KEY non configuré (dev local uniquement)
+"""
+import os
+import httpx
 import math
+import pandas as pd
 from typing import Optional
 
 try:
@@ -10,17 +14,10 @@ try:
 except Exception:
     TA_AVAILABLE = False
 
-# Session avec User-Agent pour éviter le rate limit Yahoo Finance
-_session = requests.Session()
-_session.headers.update({
-    "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36",
-    "Accept": "text/html,application/xhtml+xml,application/xml;q=0.9,*/*;q=0.8",
-    "Accept-Language": "fr-FR,fr;q=0.9,en;q=0.8",
-})
+TWELVE_DATA_BASE = "https://api.twelvedata.com"
 
 
 def _clean(val) -> Optional[float]:
-    """Retourne None si la valeur est NaN/Inf, sinon arrondit à 2 décimales."""
     try:
         f = float(val)
         if math.isnan(f) or math.isinf(f):
@@ -30,88 +27,114 @@ def _clean(val) -> Optional[float]:
         return None
 
 
+def _td_key() -> str:
+    return os.getenv("TWELVE_DATA_KEY", "")
+
+
 def get_quote(symbol: str) -> dict:
+    key = _td_key()
+    if not key:
+        return _yf_quote(symbol)
     try:
-        ticker = yf.Ticker(symbol, session=_session)
-        info = ticker.fast_info
-        price = _clean(info.last_price)
-        prev  = _clean(info.previous_close)
+        # Twelve Data — quote en temps réel
+        r = httpx.get(f"{TWELVE_DATA_BASE}/price", params={
+            "symbol": symbol, "apikey": key
+        }, timeout=10)
+        data = r.json()
+        price = _clean(data.get("price"))
+
+        # Stats complémentaires
+        r2 = httpx.get(f"{TWELVE_DATA_BASE}/quote", params={
+            "symbol": symbol, "apikey": key
+        }, timeout=10)
+        q = r2.json()
+
+        prev  = _clean(q.get("previous_close"))
+        change = _clean(q.get("change"))
+        pct    = _clean(q.get("percent_change"))
+
         return {
             "symbol":     symbol,
             "price":      price,
             "prev_close": prev,
-            "change":     round(price - prev, 2) if price and prev else None,
-            "change_pct": round(((price - prev) / prev) * 100, 2) if price and prev else None,
-            "volume":     info.three_month_average_volume,
-            "market_cap": info.market_cap,
-            "currency":   info.currency,
+            "change":     change,
+            "change_pct": pct,
+            "volume":     q.get("volume"),
+            "market_cap": None,
+            "currency":   q.get("currency", "EUR"),
         }
     except Exception as e:
-        print(f"[QUOTE ERROR] {symbol}: {e}")
-        return {"symbol": symbol, "price": None, "error": str(e)}
+        print(f"[TD QUOTE ERROR] {symbol}: {e}")
+        return _yf_quote(symbol)
 
 
 def get_history(symbol: str, period: str = "6mo", interval: str = "1d") -> list[dict]:
+    key = _td_key()
+    if not key:
+        return _yf_history(symbol, period, interval)
     try:
-        ticker = yf.Ticker(symbol, session=_session)
-        df = ticker.history(period=period, interval=interval)
-        if df.empty:
-            return []
-        df = df.reset_index()
-        date_col = "Datetime" if "Datetime" in df.columns else "Date"
-        df[date_col] = df[date_col].astype(str)
+        # Convertir période en outputsize
+        output_map = {"1mo": 30, "3mo": 90, "6mo": 180, "1y": 365, "2y": 730, "5y": 1825}
+        outputsize = output_map.get(period, 180)
 
-        result = []
-        for _, row in df.iterrows():
-            o = _clean(row["Open"])
-            h = _clean(row["High"])
-            l = _clean(row["Low"])
-            c = _clean(row["Close"])
-            # Ignorer les bougies incomplètes
+        interval_map = {"1d": "1day", "1wk": "1week", "1mo": "1month"}
+        td_interval = interval_map.get(interval, "1day")
+
+        r = httpx.get(f"{TWELVE_DATA_BASE}/time_series", params={
+            "symbol":     symbol,
+            "interval":   td_interval,
+            "outputsize": outputsize,
+            "apikey":     key,
+        }, timeout=15)
+        data = r.json()
+
+        if data.get("status") == "error":
+            print(f"[TD HISTORY ERROR] {symbol}: {data.get('message')}")
+            return _yf_history(symbol, period, interval)
+
+        candles = []
+        for item in reversed(data.get("values", [])):
+            o = _clean(item.get("open"))
+            h = _clean(item.get("high"))
+            l = _clean(item.get("low"))
+            c = _clean(item.get("close"))
             if None in (o, h, l, c):
                 continue
-            result.append({
-                "time":   str(row[date_col])[:10],
-                "open":   o,
-                "high":   h,
-                "low":    l,
-                "close":  c,
-                "volume": int(row["Volume"]) if not math.isnan(float(row["Volume"])) else 0,
+            candles.append({
+                "time":   item["datetime"][:10],
+                "open":   o, "high": h, "low": l, "close": c,
+                "volume": int(item.get("volume", 0) or 0),
             })
-        return result
+        return candles
     except Exception as e:
-        print(f"[HISTORY ERROR] {symbol}: {e}")
-        return []
+        print(f"[TD HISTORY ERROR] {symbol}: {e}")
+        return _yf_history(symbol, period, interval)
 
 
 def get_indicators(symbol: str, period: str = "6mo") -> dict:
+    candles = get_history(symbol, period)
+    if len(candles) < 20:
+        return {}
     try:
-        ticker = yf.Ticker(symbol, session=_session)
-        df = ticker.history(period=period, interval="1d")
-        if df.empty or len(df) < 20:
-            return {}
-
-        close = df["Close"]
+        close = pd.Series([c["close"] for c in candles])
         sma20 = _clean(close.rolling(20).mean().iloc[-1])
-        sma50 = _clean(close.rolling(50).mean().iloc[-1]) if len(df) >= 50 else None
+        sma50 = _clean(close.rolling(50).mean().iloc[-1]) if len(candles) >= 50 else None
 
         if not TA_AVAILABLE:
             return {"sma20": sma20, "sma50": sma50, "signal": "NEUTRE"}
 
-        rsi       = _clean(ta.momentum.RSIIndicator(close, window=14).rsi().iloc[-1])
-        macd_obj  = ta.trend.MACD(close)
-        macd      = _clean(macd_obj.macd().iloc[-1])
-        macd_sig  = _clean(macd_obj.macd_signal().iloc[-1])
-        bb        = ta.volatility.BollingerBands(close, window=20)
-        bb_upper  = _clean(bb.bollinger_hband().iloc[-1])
-        bb_lower  = _clean(bb.bollinger_lband().iloc[-1])
+        rsi      = _clean(ta.momentum.RSIIndicator(close, window=14).rsi().iloc[-1])
+        macd_obj = ta.trend.MACD(close)
+        macd     = _clean(macd_obj.macd().iloc[-1])
+        macd_sig = _clean(macd_obj.macd_signal().iloc[-1])
+        bb       = ta.volatility.BollingerBands(close, window=20)
 
         return {
             "rsi":         rsi,
             "macd":        macd,
             "macd_signal": macd_sig,
-            "bb_upper":    bb_upper,
-            "bb_lower":    bb_lower,
+            "bb_upper":    _clean(bb.bollinger_hband().iloc[-1]),
+            "bb_lower":    _clean(bb.bollinger_lband().iloc[-1]),
             "sma20":       sma20,
             "sma50":       sma50,
             "signal":      _signal(rsi or 50, macd or 0, macd_sig or 0),
@@ -133,10 +156,46 @@ def _signal(rsi: float, macd: float, macd_signal: float) -> str:
 
 
 def search_symbols(query: str) -> list[dict]:
+    return [{"symbol": query.upper(), "name": query.upper(), "exchange": "", "type": ""}]
+
+
+# ── Fallback yfinance (dev local) ──────────────────────────────────────────────
+def _yf_quote(symbol: str) -> dict:
     try:
-        ticker = yf.Ticker(query, session=_session)
-        info = ticker.info
-        return [{"symbol": query.upper(), "name": info.get("longName", query),
-                 "exchange": info.get("exchange", ""), "type": info.get("quoteType", "")}]
-    except Exception:
+        import yfinance as yf
+        import requests
+        s = requests.Session()
+        s.headers.update({"User-Agent": "Mozilla/5.0"})
+        ticker = yf.Ticker(symbol, session=s)
+        info = ticker.fast_info
+        price = _clean(info.last_price)
+        prev  = _clean(info.previous_close)
+        return {
+            "symbol": symbol, "price": price, "prev_close": prev,
+            "change": round(price - prev, 2) if price and prev else None,
+            "change_pct": round(((price - prev) / prev) * 100, 2) if price and prev else None,
+            "volume": info.three_month_average_volume,
+            "market_cap": info.market_cap, "currency": info.currency,
+        }
+    except Exception as e:
+        return {"symbol": symbol, "price": None, "error": str(e)}
+
+
+def _yf_history(symbol: str, period: str, interval: str) -> list[dict]:
+    try:
+        import yfinance as yf
+        df = yf.download(symbol, period=period, interval=interval, progress=False, auto_adjust=True)
+        if df.empty:
+            return []
+        df = df.reset_index()
+        date_col = "Datetime" if "Datetime" in df.columns else "Date"
+        result = []
+        for _, row in df.iterrows():
+            o, h, l, c = _clean(row["Open"]), _clean(row["High"]), _clean(row["Low"]), _clean(row["Close"])
+            if None in (o, h, l, c):
+                continue
+            result.append({"time": str(row[date_col])[:10], "open": o, "high": h, "low": l, "close": c, "volume": int(row.get("Volume", 0) or 0)})
+        return result
+    except Exception as e:
+        print(f"[YF FALLBACK ERROR] {symbol}: {e}")
         return []
