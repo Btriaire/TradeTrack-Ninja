@@ -1,7 +1,8 @@
 import axios from 'axios'
 import type { Quote, Candle, Indicators, Article, FeeBreakdown, AIAnalysis } from '../types'
 
-const api = axios.create({ baseURL: '/api' })
+const BASE_URL = import.meta.env.VITE_API_URL ?? '/api'
+const api = axios.create({ baseURL: BASE_URL })
 
 export const getQuote = (symbol: string): Promise<Quote> =>
   api.get(`/stocks/quote/${symbol}`).then(r => r.data)
