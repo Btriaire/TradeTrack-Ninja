@@ -47,7 +47,7 @@ interface Props {
 export function NewsPanel({ symbol }: Props) {
   const { data, isLoading, refetch, isFetching } = useQuery({
     queryKey: ['news', symbol],
-    queryFn: () => getNews(symbol),
+    queryFn: () => getNews(), // toutes les actus marché
     staleTime: 5 * 60 * 1000,
   })
 

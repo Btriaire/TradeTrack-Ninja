@@ -4,10 +4,10 @@ from datetime import datetime
 from typing import Optional
 
 SOURCES = {
-    "Boursorama": "https://www.boursorama.com/rss/actus-societes",
+    "Boursorama":      "https://www.boursorama.com/rss/actus-societes",
     "Figaro Economie": "https://www.lefigaro.fr/rss/figaro_economie.xml",
-    "Zonebourse": "https://www.zonebourse.com/rss/news.xml",
-    "ABC Bourse": "https://www.abcbourse.com/rss/news.xml",
+    "Zonebourse":      "https://www.zonebourse.com/rss/news.xml",
+    "Les Echos":       "https://www.lesechos.fr/rss/rss_finance.xml",
 }
 
 HEADERS = {
