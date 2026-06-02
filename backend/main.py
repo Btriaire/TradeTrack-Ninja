@@ -42,21 +42,34 @@ def health():
 @app.get("/debug/env")
 def debug_env():
     import os
-    key = os.getenv("GEMINI_API_KEY", "")
-    td  = os.getenv("TWELVE_DATA_KEY", "")
+    gemini = os.getenv("GEMINI_API_KEY", "")
+    av     = os.getenv("ALPHA_VANTAGE_KEY", "")
     return {
-        "gemini_key_set": bool(key),
-        "twelve_data_key_set": bool(td),
-        "twelve_data_preview": td[:8] + "..." if td else "VIDE",
+        "gemini_key_set":        bool(gemini),
+        "alpha_vantage_key_set": bool(av),
+        "alpha_vantage_preview": av[:8] + "..." if av else "VIDE",
     }
 
 @app.get("/debug/av/{symbol}")
 def debug_alphavantage(symbol: str):
+    import os, httpx
     from services.yahoo_finance import _av_symbol, get_history
     av_sym = _av_symbol(symbol)
-    data   = get_history(symbol, "1mo")
+    key    = os.getenv("ALPHA_VANTAGE_KEY", "")
+    # Appel brut pour voir la réponse exacte d'AV
+    try:
+        r    = httpx.get("https://www.alphavantage.co/query", params={
+            "function": "GLOBAL_QUOTE", "symbol": av_sym, "apikey": key,
+        }, timeout=10)
+        raw  = r.json()
+    except Exception as e:
+        raw = {"error": str(e)}
+    data = get_history(symbol, "1mo")
     return {
         "av_symbol":     av_sym,
+        "key_loaded":    bool(key),
+        "key_preview":   key[:8] + "..." if key else "VIDE",
+        "av_raw_quote":  raw,
         "candles_count": len(data),
         "last":          data[-1] if data else None,
     }
