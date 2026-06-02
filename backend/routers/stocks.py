@@ -6,24 +6,39 @@ router = APIRouter(prefix="/stocks", tags=["stocks"])
 
 @router.get("/quote/{symbol}")
 def quote(symbol: str):
-    data = get_quote(symbol.upper())
-    if not data.get("price"):
-        raise HTTPException(404, f"Symbole {symbol} introuvable")
-    return data
+    try:
+        data = get_quote(symbol.upper())
+        if not data.get("price"):
+            raise HTTPException(404, f"Symbole {symbol} introuvable")
+        return data
+    except HTTPException:
+        raise
+    except Exception as e:
+        print(f"[ROUTE ERROR] /quote/{symbol}: {e}")
+        raise HTTPException(500, str(e))
 
 
 @router.get("/history/{symbol}")
 def history(symbol: str, period: str = "6mo", interval: str = "1d"):
-    data = get_history(symbol.upper(), period, interval)
-    if not data:
-        raise HTTPException(404, f"Pas d'historique pour {symbol}")
-    return data
+    try:
+        data = get_history(symbol.upper(), period, interval)
+        if not data:
+            raise HTTPException(404, f"Pas d'historique pour {symbol}")
+        return data
+    except HTTPException:
+        raise
+    except Exception as e:
+        print(f"[ROUTE ERROR] /history/{symbol}: {e}")
+        raise HTTPException(500, str(e))
 
 
 @router.get("/indicators/{symbol}")
 def indicators(symbol: str):
-    data = get_indicators(symbol.upper())
-    return data
+    try:
+        return get_indicators(symbol.upper())
+    except Exception as e:
+        print(f"[ROUTE ERROR] /indicators/{symbol}: {e}")
+        return {}
 
 
 @router.get("/search")
