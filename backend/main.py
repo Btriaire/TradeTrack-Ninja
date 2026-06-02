@@ -52,7 +52,19 @@ def debug_env():
 
 @app.get("/debug/stooq/{symbol}")
 def debug_stooq(symbol: str):
-    from services.yahoo_finance import _stooq_sym, get_history
+    import httpx
+    from services.yahoo_finance import _stooq_sym, get_history, HEADERS
+    from datetime import datetime, timedelta
     stooq = _stooq_sym(symbol)
-    data  = get_history(symbol, "1mo")
-    return {"stooq_symbol": stooq, "candles_count": len(data), "last": data[-1] if data else None}
+    d2 = datetime.now()
+    d1 = d2 - timedelta(days=30)
+    url = f"https://stooq.com/q/d/l/?s={stooq}&d1={d1.strftime('%Y%m%d')}&d2={d2.strftime('%Y%m%d')}&i=d"
+    r = httpx.get(url, headers=HEADERS, timeout=12, follow_redirects=True)
+    data = get_history(symbol, "1mo")
+    return {
+        "stooq_symbol": stooq,
+        "url": url,
+        "status_code": r.status_code,
+        "raw_response": r.text[:500],
+        "candles_count": len(data),
+    }
