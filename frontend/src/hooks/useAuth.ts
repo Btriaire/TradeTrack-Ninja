@@ -1,5 +1,8 @@
 import { useState, useEffect } from 'react'
-import { onAuthStateChanged, signInWithPopup, signOut, User } from 'firebase/auth'
+import {
+  onAuthStateChanged, signInWithPopup, signInWithRedirect,
+  getRedirectResult, signOut, User
+} from 'firebase/auth'
 import { auth, googleProvider } from '../firebase'
 
 export function useAuth() {
@@ -7,6 +10,9 @@ export function useAuth() {
   const [loading, setLoading] = useState(true)
 
   useEffect(() => {
+    // Récupère le résultat après un redirect Google
+    getRedirectResult(auth).catch(() => {})
+
     const unsubscribe = onAuthStateChanged(auth, (u) => {
       setUser(u)
       setLoading(false)
@@ -14,7 +20,16 @@ export function useAuth() {
     return unsubscribe
   }, [])
 
-  const loginWithGoogle = () => signInWithPopup(auth, googleProvider)
+  const loginWithGoogle = async () => {
+    try {
+      // Essai popup d'abord
+      await signInWithPopup(auth, googleProvider)
+    } catch {
+      // Si popup bloqué → redirect
+      await signInWithRedirect(auth, googleProvider)
+    }
+  }
+
   const logout = () => signOut(auth)
 
   return { user, loading, loginWithGoogle, logout }
