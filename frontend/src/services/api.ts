@@ -1,0 +1,37 @@
+import axios from 'axios'
+import type { Quote, Candle, Indicators, Article, FeeBreakdown, AIAnalysis } from '../types'
+
+const api = axios.create({ baseURL: '/api' })
+
+export const getQuote = (symbol: string): Promise<Quote> =>
+  api.get(`/stocks/quote/${symbol}`).then(r => r.data)
+
+export const getHistory = (symbol: string, period = '6mo', interval = '1d'): Promise<Candle[]> =>
+  api.get(`/stocks/history/${symbol}`, { params: { period, interval } }).then(r => r.data)
+
+export const getIndicators = (symbol: string): Promise<Indicators> =>
+  api.get(`/stocks/indicators/${symbol}`).then(r => r.data)
+
+export const getNews = (symbol?: string): Promise<Article[]> =>
+  api.get('/news/', { params: symbol ? { symbol } : {} }).then(r => r.data)
+
+export const simulateOrder = (payload: {
+  montant: number
+  quantite: number
+  prix_unitaire: number
+  action_francaise: boolean
+  eligible_ttf: boolean
+  srd: boolean
+  marche: string
+}): Promise<FeeBreakdown> =>
+  api.post('/simulator/order', payload).then(r => r.data)
+
+export const getTarifs = () =>
+  api.get('/simulator/tarifs').then(r => r.data)
+
+export const analyzeSentiment = (payload: {
+  symbol: string
+  articles: Article[]
+  indicators: Indicators | {}
+}): Promise<AIAnalysis> =>
+  api.post('/analysis/sentiment', payload).then(r => r.data)
