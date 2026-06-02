@@ -2,7 +2,8 @@ from fastapi import APIRouter
 from pydantic import BaseModel
 import os
 import json
-import google.generativeai as genai
+from google import genai
+from google.genai import types
 
 router = APIRouter(prefix="/analysis", tags=["analysis"])
 
@@ -19,8 +20,7 @@ def analyze_sentiment(req: AnalysisRequest):
     if not api_key:
         return _mock_analysis(req.symbol)
 
-    genai.configure(api_key=api_key)
-    model = genai.GenerativeModel("gemini-2.0-flash")
+    client = genai.Client(api_key=api_key)
 
     articles_text = "\n".join([
         f"[{a['source']}] {a['title']}: {a['summary']}"
@@ -59,7 +59,10 @@ Réponds UNIQUEMENT en JSON valide (sans markdown, sans ```), avec exactement ce
     import time
     for attempt in range(3):
         try:
-            response = model.generate_content(prompt)
+            response = client.models.generate_content(
+                model="gemini-2.0-flash",
+                contents=prompt,
+            )
             text = response.text.strip()
             if text.startswith("```"):
                 text = text.split("```")[1]
