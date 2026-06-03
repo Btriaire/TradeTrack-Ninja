@@ -54,6 +54,9 @@ export const getMarkets = () =>
 export const getSectors = () =>
   api.get('/stocks/sectors').then(r => r.data)
 
+export const getGeneralNews = (category = 'Tout') =>
+  api.get('/news/general', { params: category !== 'Tout' ? { category } : {} }).then(r => r.data)
+
 export const getSignals = () =>
   api.get('/signals/daily').then(r => r.data)
 

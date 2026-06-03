@@ -3,7 +3,7 @@ import { useQuery } from '@tanstack/react-query'
 import {
   BarChart2, Newspaper, Calculator, Sparkles,
   Activity, Menu, X, Monitor, Smartphone, RotateCcw,
-  Search, PieChart, Zap, Globe, TrendingUp,
+  Search, PieChart, Zap, Globe, TrendingUp, Rss,
 } from 'lucide-react'
 import { Watchlist }      from './components/Watchlist'
 import { StockChart }     from './components/StockChart'
@@ -17,6 +17,7 @@ import { SearchModal }    from './components/SearchModal'
 import { Portfolio }      from './components/Portfolio'
 import { DailySignals }   from './components/DailySignals'
 import { Markets }        from './components/Markets'
+import { FinancialNews }  from './components/FinancialNews'
 import { useAuth }        from './hooks/useAuth'
 import { useWatchlist }   from './hooks/useWatchlist'
 import { usePortfolio }   from './hooks/usePortfolio'
@@ -24,12 +25,13 @@ import { useLayout }      from './hooks/useLayout'
 import { getHistory, getIndicators, getQuote, getNews } from './services/api'
 
 // ── Vues globales (pas liées à une valeur) ────────────────────────────────────
-type GlobalView = 'stock' | 'markets' | 'signals'
+type GlobalView = 'stock' | 'markets' | 'signals' | 'news'
 
 const GLOBAL_VIEWS: { id: GlobalView; label: string; icon: any; desc: string }[] = [
   { id: 'stock',   label: 'Analyse Valeur',     icon: TrendingUp, desc: 'Graphique, news, IA…' },
   { id: 'markets', label: 'Places de Marché',   icon: Globe,      desc: 'CAC40, DAX, NASDAQ…' },
   { id: 'signals', label: 'Signaux du Jour',    icon: Zap,        desc: 'Great Catch / Stay Away' },
+  { id: 'news',    label: 'Actualités',         icon: Rss,        desc: '15 sources FR + Monde' },
 ]
 
 // ── Onglets spécifiques à une valeur ─────────────────────────────────────────
@@ -165,6 +167,7 @@ export default function App() {
                 globalView === id
                   ? id === 'markets' ? 'bg-blue-500/20 text-blue-400 border border-blue-500/30'
                   : id === 'signals' ? 'bg-yellow-500/20 text-yellow-400 border border-yellow-500/30'
+                  : id === 'news'    ? 'bg-cyan-500/20 text-cyan-400 border border-cyan-500/30'
                   : 'bg-accent-blue/20 text-accent-blue border border-accent-blue/30'
                   : 'text-slate-500 hover:text-white hover:bg-dark-800'
               }`}
@@ -215,6 +218,9 @@ export default function App() {
 
         {/* ── Contenu principal ────────────────────────────────────────── */}
         <main className={`flex-1 overflow-y-auto space-y-3 min-w-0 ${isMobile ? 'p-3' : 'p-4'}`}>
+
+          {/* ── Vue ACTUALITÉS ──────────────────────────────────────── */}
+          {globalView === 'news' && <FinancialNews />}
 
           {/* ── Vue MARCHÉS ─────────────────────────────────────────── */}
           {globalView === 'markets' && (
