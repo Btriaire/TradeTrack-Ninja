@@ -20,22 +20,29 @@ class AnalysisRequest(BaseModel):
 
 
 def _call_gemini(api_key: str, model: str, prompt: str) -> str:
-    """Appel direct à l'API REST Gemini — compatible tous formats de clé."""
+    """Appel direct à l'API REST Gemini.
+    - Clés AIzaSy... → query param ?key=
+    - Clés AQ...     → header Authorization: Bearer
+    """
     url = f"{GEMINI_BASE}/{model}:generateContent"
     payload = {
         "contents": [{"parts": [{"text": prompt}]}],
-        "generationConfig": {
-            "temperature": 0.3,
-            "maxOutputTokens": 1024,
-        },
+        "generationConfig": {"temperature": 0.3, "maxOutputTokens": 1024},
     }
-    r = httpx.post(
-        url,
-        params={"key": api_key},
-        json=payload,
-        timeout=30,
-        headers={"Content-Type": "application/json"},
-    )
+
+    # Détection automatique du format de clé
+    if api_key.startswith("AIza"):
+        params  = {"key": api_key}
+        headers = {"Content-Type": "application/json"}
+    else:
+        # Token OAuth (AQ., ya29., etc.) → Bearer
+        params  = {}
+        headers = {
+            "Content-Type":  "application/json",
+            "Authorization": f"Bearer {api_key}",
+        }
+
+    r = httpx.post(url, params=params, json=payload, headers=headers, timeout=30)
     if r.status_code != 200:
         raise ValueError(f"HTTP {r.status_code}: {r.text[:200]}")
     data = r.json()
