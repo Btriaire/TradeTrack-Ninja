@@ -148,6 +148,11 @@ def get_quote(symbol: str) -> dict:
             change = round(price - prev, 2)
             pct    = round((price - prev) / prev * 100, 2)
 
+        # Sparkline — extraire les closes des 5 derniers jours
+        q0         = result[0].get("indicators", {}).get("quote", [{}])[0]
+        raw_closes = q0.get("close", [])
+        sparkline  = [round(c, 2) for c in raw_closes if c is not None][-7:]
+
         result_dict = {
             "symbol":     symbol,
             "price":      price,
@@ -157,6 +162,7 @@ def get_quote(symbol: str) -> dict:
             "volume":     vol,
             "market_cap": None,
             "currency":   meta.get("currency", "EUR"),
+            "sparkline":  sparkline,
         }
         return _store(cache_key, result_dict)
 

@@ -178,7 +178,6 @@ def get_sectors():
     def fetch_one(stock: dict) -> dict:
         q = get_quote(stock["symbol"])
         pct = q.get("change_pct") or 0
-        # Détection pépite : signal engine OU momentum fort
         gem = None
         if stock["symbol"] in gem_buy:
             gem = "buy"
@@ -195,6 +194,7 @@ def get_sectors():
             "volume":     q.get("volume")      or 0,
             "score":      score_map.get(stock["symbol"], 0),
             "gem":        gem,
+            "sparkline":  q.get("sparkline", []),
         }
 
     with ThreadPoolExecutor(max_workers=10) as ex:
