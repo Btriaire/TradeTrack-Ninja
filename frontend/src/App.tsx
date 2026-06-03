@@ -5,7 +5,6 @@ import {
   Activity, Menu, X, Monitor, Smartphone, RotateCcw,
   Search, PieChart, Zap, Globe, TrendingUp, Rss, Stethoscope, Telescope, Building2,
 } from 'lucide-react'
-// Activity est déjà importé ci-dessus — utilisé pour le bouton Intraday
 import { Watchlist }      from './components/Watchlist'
 import { StockChart }     from './components/StockChart'
 import { QuoteHeader }    from './components/QuoteHeader'
@@ -15,6 +14,7 @@ import { AIPanel }        from './components/AIPanel'
 import { DiagnosticPanel } from './components/DiagnosticPanel'
 import { CloturePanel }     from './components/CloturePanel'
 import { CompanyProfile }  from './components/CompanyProfile'
+import { Dashboard }       from './components/Dashboard'
 import { IntradayChart }   from './components/IntradayChart'
 import { AuthButton }     from './components/AuthButton'
 import { IndicesBar }     from './components/IndicesBar'
@@ -31,15 +31,17 @@ import { useWatchlist }   from './hooks/useWatchlist'
 import { usePortfolio }   from './hooks/usePortfolio'
 import { useLayout }      from './hooks/useLayout'
 import { getHistory, getIndicators, getQuote, getNews } from './services/api'
+import { Logo } from './components/Logo'
 
 // ── Vues globales (pas liées à une valeur) ────────────────────────────────────
-type GlobalView = 'stock' | 'markets' | 'signals' | 'news'
+type GlobalView = 'dashboard' | 'stock' | 'markets' | 'signals' | 'news'
 
 const GLOBAL_VIEWS: { id: GlobalView; label: string; short: string; icon: any; desc: string }[] = [
-  { id: 'stock',   label: 'Analyse Valeur',   short: 'Valeur',  icon: TrendingUp, desc: 'Graphique, news, IA…' },
-  { id: 'markets', label: 'Places de Marché', short: 'Marchés', icon: Globe,      desc: 'CAC40, DAX, NASDAQ…' },
-  { id: 'signals', label: 'Signaux du Jour',  short: 'Signaux', icon: Zap,        desc: 'Great Catch / Stay Away' },
-  { id: 'news',    label: 'Actualités',       short: 'News',    icon: Rss,        desc: '15 sources FR + Monde' },
+  { id: 'dashboard',label: 'Dashboard',        short: 'Home',    icon: Activity,   desc: 'Vue d\'ensemble' },
+  { id: 'stock',    label: 'Analyse Valeur',   short: 'Valeur',  icon: TrendingUp, desc: 'Graphique, news, IA…' },
+  { id: 'markets',  label: 'Places de Marché', short: 'Marchés', icon: Globe,      desc: 'CAC40, DAX, NASDAQ…' },
+  { id: 'signals',  label: 'Signaux du Jour',  short: 'Signaux', icon: Zap,        desc: 'Great Catch / Stay Away' },
+  { id: 'news',     label: 'Actualités',       short: 'News',    icon: Rss,        desc: '15 sources FR + Monde' },
 ]
 
 // ── Lookup secteur/indice par symbole ─────────────────────────────────────────
@@ -86,7 +88,7 @@ export default function App() {
   const [symbol,       setSymbol]       = useState('MC.PA')
   const [period,       setPeriod]       = useState('6mo')
   const [activeTab,    setActiveTab]    = useState<StockTab>('chart')
-  const [globalView,   setGlobalView]   = useState<GlobalView>('stock')
+  const [globalView,   setGlobalView]   = useState<GlobalView>('dashboard')
   const [sidebarOpen,  setSidebarOpen]  = useState(false)
   const [searchOpen,   setSearchOpen]   = useState(false)
   const [showIntraday, setShowIntraday] = useState(false)
@@ -132,6 +134,7 @@ export default function App() {
     setSymbol(s)
     setGlobalView('stock')
     setActiveTab('chart')
+    setShowIntraday(false)
     if (isMobile) setSidebarOpen(false)
   }
 
@@ -166,11 +169,9 @@ export default function App() {
               <Menu size={18} />
             </button>
           )}
-          <Activity size={16} className="text-accent-blue shrink-0" />
-          <span className={`font-bold text-white tracking-tight truncate ${isMobile ? 'text-sm' : 'text-base'}`}>
-            {isMobile ? 'TradeTrack' : 'TradeTrack-Ninja'}
-          </span>
-          {!isMobile && <span className="text-xs text-slate-600 ml-1 shrink-0">LCL Bourse</span>}
+          <button onClick={() => setGlobalView('dashboard')} className="flex items-center">
+            <Logo size={isMobile ? 26 : 32} showText={!isMobile} />
+          </button>
         </div>
 
         <div className={`flex items-center shrink-0 ${isMobile ? 'gap-1.5' : 'gap-2'}`}>
@@ -196,14 +197,14 @@ export default function App() {
       {/* ── Barre des indices ────────────────────────────────────────────── */}
       <IndicesBar />
 
-      {/* ── Game of Today ───────────────────────────────────────────────── */}
-      <GameOfDay onSelectSymbol={handleSelectSymbol} />
-
-      {/* ── Top Secteurs de la semaine ───────────────────────────────────── */}
-      <TopSectors onSelectSymbol={handleSelectSymbol} />
-
-      {/* ── Géopolitique & Marchés ───────────────────────────────────────── */}
-      <GeoEvents />
+      {/* ── Banners (masquées sur le Dashboard qui les intègre déjà) ───── */}
+      {globalView !== 'dashboard' && (
+        <>
+          <GameOfDay onSelectSymbol={handleSelectSymbol} />
+          <TopSectors onSelectSymbol={handleSelectSymbol} />
+          <GeoEvents />
+        </>
+      )}
 
       {/* ── Navigation globale ──────────────────────────────────────────── */}
       <div className={`border-b border-dark-700 bg-dark-900 shrink-0 ${isMobile ? 'px-2 py-1.5' : 'px-4 py-2'}`}>
@@ -273,6 +274,14 @@ export default function App() {
 
         {/* ── Contenu principal ────────────────────────────────────────── */}
         <main className={`flex-1 overflow-y-auto space-y-3 min-w-0 ${isMobile ? 'p-3' : 'p-4'}`}>
+
+          {/* ── Vue DASHBOARD ───────────────────────────────────────── */}
+          {globalView === 'dashboard' && (
+            <Dashboard
+              onSelectSymbol={handleSelectSymbol}
+              positions={positions}
+            />
+          )}
 
           {/* ── Vue ACTUALITÉS ──────────────────────────────────────── */}
           {globalView === 'news' && <FinancialNews />}
