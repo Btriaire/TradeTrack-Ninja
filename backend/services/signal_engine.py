@@ -182,9 +182,20 @@ def compute_signals() -> dict:
 
     scored.sort(key=lambda x: x["score"], reverse=True)
 
+    # Seuil adaptatif : essaie >= 2, replie sur >= 1, puis prend le top 3
     great_catch = [s for s in scored if s["score"] >= 2.0][:6]
-    stay_away   = [s for s in scored if s["score"] <= -2.0][-6:]
-    stay_away   = list(reversed(stay_away))  # plus négatif en premier
+    if len(great_catch) < 3:
+        great_catch = [s for s in scored if s["score"] >= 1.0][:6]
+    if len(great_catch) < 3:
+        great_catch = scored[:3]  # toujours au moins 3
+
+    stay_neg    = [s for s in scored if s["score"] <= -2.0]
+    stay_away   = list(reversed(stay_neg))[:6]
+    if len(stay_away) < 3:
+        stay_neg2 = [s for s in scored if s["score"] <= -1.0]
+        stay_away = list(reversed(stay_neg2))[:6]
+    if len(stay_away) < 3:
+        stay_away = list(reversed(scored[-3:]))  # toujours les 3 pires
 
     return {
         "great_catch": great_catch,

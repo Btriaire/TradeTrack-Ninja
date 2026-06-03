@@ -129,47 +129,28 @@ def search(q: str, market: str = "ALL"):
 
 
 @router.get("/markets")
-async def get_markets():
+def get_markets():
     """Retourne toutes les valeurs de l'univers avec leurs cotations en temps réel."""
     from services.signal_engine import UNIVERSE
-    import asyncio
+    from services.yahoo_finance import get_quote
+    from concurrent.futures import ThreadPoolExecutor
 
-    symbols = [s["symbol"] for s in UNIVERSE]
-
-    async def fetch_batch(syms: list) -> list:
-        try:
-            async with httpx.AsyncClient(headers=HEADERS, timeout=15) as client:
-                r = await client.get(
-                    "https://query1.finance.yahoo.com/v8/finance/quote",
-                    params={
-                        "symbols": ",".join(syms),
-                        "fields":  "regularMarketPrice,regularMarketChangePercent,regularMarketVolume,marketCap,regularMarketDayHigh,regularMarketDayLow",
-                    },
-                )
-            return r.json().get("quoteResponse", {}).get("result", [])
-        except Exception as e:
-            print(f"[MARKETS] batch error: {e}")
-            return []
-
-    # Découpe en chunks de 20 (limite URL Yahoo)
-    chunks  = [symbols[i:i+20] for i in range(0, len(symbols), 20)]
-    batches = await asyncio.gather(*[fetch_batch(c) for c in chunks])
-    all_q   = [q for batch in batches for q in batch]
-    qmap    = {q["symbol"]: q for q in all_q}
-
-    enriched = []
-    for stock in UNIVERSE:
-        q = qmap.get(stock["symbol"], {})
-        enriched.append({
+    def fetch_one(stock: dict) -> dict:
+        q = get_quote(stock["symbol"])
+        return {
             **stock,
-            "price":      round(q.get("regularMarketPrice",         0) or 0, 2),
-            "change_pct": round(q.get("regularMarketChangePercent", 0) or 0, 2),
-            "volume":     q.get("regularMarketVolume", 0) or 0,
-            "day_high":   round(q.get("regularMarketDayHigh", 0) or 0, 2),
-            "day_low":    round(q.get("regularMarketDayLow",  0) or 0, 2),
-            "market_cap": q.get("marketCap", 0) or 0,
-        })
-    return enriched
+            "price":      q.get("price")      or 0,
+            "change_pct": q.get("change_pct") or 0,
+            "volume":     q.get("volume")     or 0,
+            "market_cap": q.get("market_cap") or 0,
+            "day_high":   0,
+            "day_low":    0,
+        }
+
+    with ThreadPoolExecutor(max_workers=8) as ex:
+        results = list(ex.map(fetch_one, UNIVERSE))
+
+    return results
 
 
 @router.get("/indices")
