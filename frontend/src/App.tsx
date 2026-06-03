@@ -28,11 +28,11 @@ import { getHistory, getIndicators, getQuote, getNews } from './services/api'
 // ── Vues globales (pas liées à une valeur) ────────────────────────────────────
 type GlobalView = 'stock' | 'markets' | 'signals' | 'news'
 
-const GLOBAL_VIEWS: { id: GlobalView; label: string; icon: any; desc: string }[] = [
-  { id: 'stock',   label: 'Analyse Valeur',     icon: TrendingUp, desc: 'Graphique, news, IA…' },
-  { id: 'markets', label: 'Places de Marché',   icon: Globe,      desc: 'CAC40, DAX, NASDAQ…' },
-  { id: 'signals', label: 'Signaux du Jour',    icon: Zap,        desc: 'Great Catch / Stay Away' },
-  { id: 'news',    label: 'Actualités',         icon: Rss,        desc: '15 sources FR + Monde' },
+const GLOBAL_VIEWS: { id: GlobalView; label: string; short: string; icon: any; desc: string }[] = [
+  { id: 'stock',   label: 'Analyse Valeur',   short: 'Valeur',  icon: TrendingUp, desc: 'Graphique, news, IA…' },
+  { id: 'markets', label: 'Places de Marché', short: 'Marchés', icon: Globe,      desc: 'CAC40, DAX, NASDAQ…' },
+  { id: 'signals', label: 'Signaux du Jour',  short: 'Signaux', icon: Zap,        desc: 'Great Catch / Stay Away' },
+  { id: 'news',    label: 'Actualités',       short: 'News',    icon: Rss,        desc: '15 sources FR + Monde' },
 ]
 
 // ── Lookup secteur/indice par symbole ─────────────────────────────────────────
@@ -148,23 +148,25 @@ export default function App() {
     <div className="min-h-screen bg-dark-900 flex flex-col">
 
       {/* ── Header ──────────────────────────────────────────────────────── */}
-      <header className="border-b border-dark-700 px-4 py-3 flex items-center justify-between shrink-0 gap-2">
+      <header className={`border-b border-dark-700 flex items-center justify-between shrink-0 gap-2 ${isMobile ? 'px-3 py-2' : 'px-4 py-3'}`}>
         <div className="flex items-center gap-2 min-w-0">
           {isMobile && (
             <button onClick={() => setSidebarOpen(o => !o)}
               className="text-slate-400 hover:text-white transition-colors p-1 shrink-0">
-              <Menu size={20} />
+              <Menu size={18} />
             </button>
           )}
-          <Activity size={18} className="text-accent-blue shrink-0" />
-          <span className="font-bold text-white text-base tracking-tight truncate">TradeTrack-Ninja</span>
+          <Activity size={16} className="text-accent-blue shrink-0" />
+          <span className={`font-bold text-white tracking-tight truncate ${isMobile ? 'text-sm' : 'text-base'}`}>
+            {isMobile ? 'TradeTrack' : 'TradeTrack-Ninja'}
+          </span>
           {!isMobile && <span className="text-xs text-slate-600 ml-1 shrink-0">LCL Bourse</span>}
         </div>
 
-        <div className="flex items-center gap-2 shrink-0">
+        <div className={`flex items-center shrink-0 ${isMobile ? 'gap-1.5' : 'gap-2'}`}>
           <button
             onClick={() => setSearchOpen(true)}
-            className="flex items-center gap-2 text-xs text-slate-500 hover:text-white bg-dark-800 hover:bg-dark-700 border border-dark-600 px-3 py-1.5 rounded-lg transition-colors"
+            className={`flex items-center gap-2 text-xs text-slate-500 hover:text-white bg-dark-800 hover:bg-dark-700 border border-dark-600 rounded-lg transition-colors ${isMobile ? 'p-1.5' : 'px-3 py-1.5'}`}
           >
             <Search size={13} />
             {!isMobile && <span>Rechercher</span>}
@@ -176,7 +178,7 @@ export default function App() {
               Live
             </div>
           )}
-          <LayoutToggle />
+          {!isMobile && <LayoutToggle />}
           <AuthButton />
         </div>
       </header>
@@ -185,13 +187,15 @@ export default function App() {
       <IndicesBar />
 
       {/* ── Navigation globale ──────────────────────────────────────────── */}
-      <div className="border-b border-dark-700 bg-dark-900 px-4 py-2 shrink-0">
-        <div className={`flex gap-2 ${isMobile ? '' : 'max-w-lg'}`}>
-          {GLOBAL_VIEWS.map(({ id, label, icon: Icon, desc }) => (
+      <div className={`border-b border-dark-700 bg-dark-900 shrink-0 ${isMobile ? 'px-2 py-1.5' : 'px-4 py-2'}`}>
+        <div className={`flex gap-1.5 ${isMobile ? '' : 'max-w-lg gap-2'}`}>
+          {GLOBAL_VIEWS.map(({ id, label, short, icon: Icon, desc }) => (
             <button
               key={id}
               onClick={() => setGlobalView(id)}
-              className={`flex items-center gap-2 px-3 py-2 rounded-lg text-xs font-semibold transition-all flex-1 ${
+              className={`flex items-center justify-center gap-1.5 rounded-lg text-xs font-semibold transition-all flex-1 ${
+                isMobile ? 'px-2 py-2 flex-col gap-0.5' : 'px-3 py-2'
+              } ${
                 globalView === id
                   ? id === 'markets' ? 'bg-blue-500/20 text-blue-400 border border-blue-500/30'
                   : id === 'signals' ? 'bg-yellow-500/20 text-yellow-400 border border-yellow-500/30'
@@ -200,13 +204,17 @@ export default function App() {
                   : 'text-slate-500 hover:text-white hover:bg-dark-800'
               }`}
             >
-              <Icon size={13} className="shrink-0" />
-              <div className="text-left min-w-0">
-                <div className="truncate">{label}</div>
-                {!isMobile && globalView !== id && (
-                  <div className="text-slate-600 font-normal text-xs truncate">{desc}</div>
-                )}
-              </div>
+              <Icon size={isMobile ? 15 : 13} className="shrink-0" />
+              {isMobile ? (
+                <span className="text-[10px] leading-none font-medium">{short}</span>
+              ) : (
+                <div className="text-left min-w-0">
+                  <div className="truncate">{label}</div>
+                  {globalView !== id && (
+                    <div className="text-slate-600 font-normal text-xs truncate">{desc}</div>
+                  )}
+                </div>
+              )}
             </button>
           ))}
         </div>
@@ -285,14 +293,17 @@ export default function App() {
               )}
 
               {/* Onglets valeur */}
-              <div className="flex gap-1 bg-dark-800 rounded-xl p-1">
+              <div className={`flex gap-1 bg-dark-800 rounded-xl p-1 ${isMobile ? 'overflow-x-auto scrollbar-none' : ''}`}>
                 {STOCK_TABS.map(({ id, label, icon: Icon }) => (
                   <button key={id} onClick={() => setActiveTab(id)}
-                    className={`flex-1 flex items-center justify-center gap-1.5 py-2 rounded-lg text-xs font-semibold transition-colors ${
-                      activeTab === id ? 'bg-dark-600 text-white' : 'text-slate-500 hover:text-slate-300'
-                    }`}>
+                    className={`flex items-center justify-center gap-1.5 py-2 rounded-lg text-xs font-semibold transition-colors shrink-0 ${
+                      isMobile ? 'flex-none px-3.5' : 'flex-1'
+                    } ${activeTab === id ? 'bg-dark-600 text-white' : 'text-slate-500 hover:text-slate-300'}`}>
                     <Icon size={12} />
-                    {!isMobile && <span>{label}</span>}
+                    {isMobile
+                      ? <span className="text-[10px]">{label.split(' ')[0]}</span>
+                      : <span>{label}</span>
+                    }
                   </button>
                 ))}
               </div>
