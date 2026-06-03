@@ -1,10 +1,31 @@
+import { useState } from 'react'
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query'
 import {
   TrendingUp, TrendingDown, RefreshCw, Plus, Zap,
-  Clock, Target, BarChart2, BookmarkPlus,
+  Clock, Target, BarChart2, BookmarkPlus, Filter,
 } from 'lucide-react'
 import { getSignals, refreshSignals } from '../services/api'
 import type { WatchlistItem, PortfolioPosition } from '../types'
+
+// ── Types filtres ─────────────────────────────────────────────────────────────
+type IndexFilter  = 'ALL' | 'CAC 40' | 'DAX' | 'NASDAQ' | 'S&P 500' | 'FTSE 100' | 'AEX'
+type ScoreFilter  = 0 | 1 | 2 | 3
+
+const INDEX_FILTERS: { id: IndexFilter; label: string; flag: string }[] = [
+  { id: 'ALL',      label: 'Tous',    flag: '🌍' },
+  { id: 'CAC 40',   label: 'CAC 40',  flag: '🇫🇷' },
+  { id: 'DAX',      label: 'DAX',     flag: '🇩🇪' },
+  { id: 'NASDAQ',   label: 'NASDAQ',  flag: '🇺🇸' },
+  { id: 'S&P 500',  label: 'S&P 500', flag: '🇺🇸' },
+  { id: 'FTSE 100', label: 'FTSE',    flag: '🇬🇧' },
+  { id: 'AEX',      label: 'AEX',     flag: '🇳🇱' },
+]
+const SCORE_FILTERS: { id: ScoreFilter; label: string }[] = [
+  { id: 0, label: 'Tous' },
+  { id: 1, label: 'Score ≥ 1' },
+  { id: 2, label: 'Score ≥ 2' },
+  { id: 3, label: 'Score ≥ 3' },
+]
 
 interface SignalCard {
   symbol:        string
@@ -133,6 +154,9 @@ function SignalCardUI({
 
 export function DailySignals({ onSelectSymbol, onAddWatchlist, onAddPortfolio, watchlistSymbols }: Props) {
   const queryClient = useQueryClient()
+  const [indexFilter, setIndexFilter] = useState<IndexFilter>('ALL')
+  const [scoreFilter, setScoreFilter] = useState<ScoreFilter>(0)
+  const [minPotential, setMinPotential] = useState(0)
 
   const { data, isLoading, dataUpdatedAt } = useQuery({
     queryKey:       ['signals'],
@@ -149,9 +173,21 @@ export function DailySignals({ onSelectSymbol, onAddWatchlist, onAddPortfolio, w
     },
   })
 
-  const great = data?.great_catch ?? []
-  const away  = data?.stay_away   ?? []
+  const rawGreat = data?.great_catch ?? []
+  const rawAway  = data?.stay_away   ?? []
   const isGenerating = data?.generating || false
+
+  // Appliquer les filtres
+  function applyFilters(list: SignalCard[]) {
+    return list.filter(s => {
+      if (indexFilter !== 'ALL' && s.index !== indexFilter) return false
+      if (scoreFilter > 0 && s.score < scoreFilter) return false
+      if (minPotential > 0 && s.potential_pct < minPotential) return false
+      return true
+    })
+  }
+  const great = applyFilters(rawGreat)
+  const away  = applyFilters(rawAway)
 
   const lastUpdate = dataUpdatedAt
     ? new Date(dataUpdatedAt).toLocaleTimeString('fr-FR', { hour: '2-digit', minute: '2-digit' })
@@ -189,6 +225,62 @@ export function DailySignals({ onSelectSymbol, onAddWatchlist, onAddPortfolio, w
         {refresh.isPending && (
           <div className="mt-3 text-xs text-slate-600 bg-dark-700 rounded-lg px-3 py-2">
             ⏳ Analyse de {data?.universe_size ?? 40} valeurs en cours… (~60 secondes)
+          </div>
+        )}
+
+        {/* ── Filtres ──────────────────────────────────────────────── */}
+        {!isLoading && (rawGreat.length > 0 || rawAway.length > 0) && (
+          <div className="mt-3 pt-3 border-t border-dark-600/50 space-y-2">
+            <div className="flex items-center gap-1.5 text-[10px] font-mono text-slate-600">
+              <Filter size={9} />
+              <span className="uppercase tracking-widest">Filtres</span>
+            </div>
+            {/* Indice */}
+            <div className="flex gap-1 flex-wrap">
+              {INDEX_FILTERS.map(f => (
+                <button key={f.id} onClick={() => setIndexFilter(f.id)}
+                  className={`flex items-center gap-1 px-2 py-1 rounded-lg text-[10px] font-mono transition-colors border ${
+                    indexFilter === f.id
+                      ? 'bg-yellow-500/15 text-yellow-300 border-yellow-500/30'
+                      : 'bg-dark-700 text-slate-500 hover:text-white border-dark-600'
+                  }`}>
+                  {f.flag} {f.label}
+                </button>
+              ))}
+            </div>
+            {/* Score + Potentiel */}
+            <div className="flex gap-2 flex-wrap items-center">
+              <div className="flex gap-1">
+                {SCORE_FILTERS.map(f => (
+                  <button key={f.id} onClick={() => setScoreFilter(f.id)}
+                    className={`px-2 py-1 rounded-lg text-[10px] font-mono transition-colors border ${
+                      scoreFilter === f.id
+                        ? 'bg-cyan-500/15 text-cyan-300 border-cyan-500/30'
+                        : 'bg-dark-700 text-slate-500 hover:text-white border-dark-600'
+                    }`}>
+                    {f.label}
+                  </button>
+                ))}
+              </div>
+              <div className="flex gap-1 ml-2">
+                {[0, 3, 5, 10].map(v => (
+                  <button key={v} onClick={() => setMinPotential(v)}
+                    className={`px-2 py-1 rounded-lg text-[10px] font-mono transition-colors border ${
+                      minPotential === v
+                        ? 'bg-emerald-500/15 text-emerald-300 border-emerald-500/30'
+                        : 'bg-dark-700 text-slate-500 hover:text-white border-dark-600'
+                    }`}>
+                    {v === 0 ? 'Potentiel tout' : `≥ ${v}%`}
+                  </button>
+                ))}
+              </div>
+              {(indexFilter !== 'ALL' || scoreFilter > 0 || minPotential > 0) && (
+                <button onClick={() => { setIndexFilter('ALL'); setScoreFilter(0); setMinPotential(0) }}
+                  className="px-2 py-1 rounded-lg text-[10px] font-mono text-red-400/70 hover:text-red-400 border border-red-500/20 hover:border-red-500/40 transition-colors">
+                  ✕ Réinitialiser
+                </button>
+              )}
+            </div>
           </div>
         )}
       </div>

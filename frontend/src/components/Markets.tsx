@@ -1,6 +1,6 @@
 import { useState, useEffect } from 'react'
 import { useQuery } from '@tanstack/react-query'
-import { RefreshCw, Star, Settings, X, ChevronDown, ChevronUp } from 'lucide-react'
+import { RefreshCw, Star, Settings, X, ChevronDown, ChevronUp, Filter, ArrowUpDown } from 'lucide-react'
 import { getSectors } from '../services/api'
 
 interface SectorStock {
@@ -17,7 +17,17 @@ interface SectorStock {
   gem:        'buy' | 'sell' | 'momentum+' | 'dip' | null
 }
 
-type ViewMode = 'sector' | 'market'
+type ViewMode   = 'sector' | 'market'
+type PerfFilter = 'all' | 'up' | 'down' | 'strong' | 'dip'
+type SortMode   = 'change_pct' | 'volume' | 'name'
+
+const PERF_FILTERS: { id: PerfFilter; label: string; color: string }[] = [
+  { id: 'all',    label: 'Tout',       color: '' },
+  { id: 'up',     label: '▲ Hausse',   color: 'text-green-400' },
+  { id: 'down',   label: '▼ Baisse',   color: 'text-red-400'   },
+  { id: 'strong', label: '⚡ > +2%',   color: 'text-yellow-400'},
+  { id: 'dip',    label: '◎ Dip -2%',  color: 'text-blue-400'  },
+]
 
 const SECTORS = [
   { id: 'all',          label: 'Tout',          icon: '⬡' },
@@ -328,6 +338,8 @@ function GroupSection({ title, icon, stocks, onSelect, defaultOpen = true }:
 export function Markets({ onSelectSymbol }: { onSelectSymbol: (s: string) => void }) {
   const [activeSector,    setActiveSector]    = useState('all')
   const [viewMode,        setViewMode]        = useState<ViewMode>('sector')
+  const [perfFilter,      setPerfFilter]      = useState<PerfFilter>('all')
+  const [globalSort,      setGlobalSort]      = useState<SortMode>('change_pct')
   const [showPersonalize, setShowPersonalize] = useState(false)
   const [favSectors,      setFavSectors]      = useState<string[]>(() => {
     try { return JSON.parse(localStorage.getItem('favSectors') || '[]') } catch { return [] }
@@ -352,9 +364,23 @@ export function Markets({ onSelectSymbol }: { onSelectSymbol: (s: string) => voi
   const gainers   = withPrice.filter(s => s.change_pct > 0).length
   const losers    = withPrice.filter(s => s.change_pct < 0).length
 
-  const filtered = activeSector === 'all'  ? allStocks
+  // Filtre secteur + perf
+  const bySector = activeSector === 'all'  ? allStocks
                  : activeSector === 'gems' ? gemStocks
                  : allStocks.filter(s => s.sector === activeSector)
+
+  const filtered = bySector.filter(s => {
+    if (perfFilter === 'up')     return s.change_pct > 0
+    if (perfFilter === 'down')   return s.change_pct < 0
+    if (perfFilter === 'strong') return s.change_pct >= 2
+    if (perfFilter === 'dip')    return s.change_pct <= -2
+    return true
+  }).sort((a, b) => {
+    if (globalSort === 'change_pct') return b.change_pct - a.change_pct
+    if (globalSort === 'volume')     return (b.volume || 0) - (a.volume || 0)
+    if (globalSort === 'name')       return a.name.localeCompare(b.name)
+    return 0
+  })
 
   function groupBy(key: keyof SectorStock, stocks: SectorStock[]) {
     const map: Record<string, SectorStock[]> = {}
@@ -516,6 +542,53 @@ export function Markets({ onSelectSymbol }: { onSelectSymbol: (s: string) => voi
             )
           })}
         </div>
+      </div>
+
+      {/* ── Filtres perf + tri ──────────────────────────────────────────── */}
+      <div className="flex items-center gap-2 flex-wrap">
+        <div className="flex items-center gap-1 text-[10px] font-mono text-slate-600 shrink-0">
+          <Filter size={9} />
+          <span className="uppercase tracking-widest">Perf</span>
+        </div>
+        <div className="flex gap-1 flex-wrap">
+          {PERF_FILTERS.map(f => (
+            <button key={f.id} onClick={() => setPerfFilter(f.id)}
+              className={`px-2.5 py-1 rounded-lg text-[10px] font-mono transition-colors border whitespace-nowrap ${
+                perfFilter === f.id
+                  ? 'bg-slate-700 text-white border-slate-600'
+                  : 'bg-dark-800 text-slate-500 hover:text-white border-slate-800 hover:border-slate-700'
+              } ${f.color}`}>
+              {f.label}
+            </button>
+          ))}
+        </div>
+        <div className="h-4 w-px bg-dark-600 mx-1 hidden sm:block" />
+        <div className="flex items-center gap-1 text-[10px] font-mono text-slate-600 shrink-0">
+          <ArrowUpDown size={9} />
+          <span className="uppercase tracking-widest">Tri</span>
+        </div>
+        <div className="flex gap-1">
+          {[
+            { id: 'change_pct' as SortMode, label: 'Variation' },
+            { id: 'volume'     as SortMode, label: 'Volume'    },
+            { id: 'name'       as SortMode, label: 'Nom'       },
+          ].map(s => (
+            <button key={s.id} onClick={() => setGlobalSort(s.id)}
+              className={`px-2.5 py-1 rounded-lg text-[10px] font-mono transition-colors border ${
+                globalSort === s.id
+                  ? 'bg-cyan-500/15 text-cyan-300 border-cyan-500/30'
+                  : 'bg-dark-800 text-slate-500 hover:text-white border-slate-800'
+              }`}>
+              {s.label}
+            </button>
+          ))}
+        </div>
+        {(perfFilter !== 'all' || globalSort !== 'change_pct') && (
+          <button onClick={() => { setPerfFilter('all'); setGlobalSort('change_pct') }}
+            className="px-2 py-1 rounded-lg text-[10px] font-mono text-red-400/70 hover:text-red-400 border border-red-500/20 transition-colors">
+            ✕ Reset
+          </button>
+        )}
       </div>
 
       {/* ── Skeleton ─────────────────────────────────────────────────────── */}

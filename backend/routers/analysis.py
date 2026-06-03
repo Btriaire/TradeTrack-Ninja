@@ -4,6 +4,7 @@ from typing import Optional
 import os, json, time
 import httpx
 from services.pattern_detector import detect_patterns, format_for_prompt
+from services.yahoo_finance import get_intraday
 
 router = APIRouter(prefix="/analysis", tags=["analysis"])
 
@@ -327,6 +328,198 @@ def analyze_diagnostic(req: DiagnosticRequest):
             "patterns_detected": patterns,
             "diagnostic": {"etat": "NEUTRE", "force": 5, "resume": "Analyse indisponible temporairement"},
             "pronostic": {"verdict": "CONSERVER", "risques": [], "catalyseurs": []}
+        }
+
+
+# ── Analyse de Clôture ───────────────────────────────────────────────────────
+class ClotureRequest(BaseModel):
+    symbol:      str
+    name:        str = ""
+    sector:      str = ""
+    index:       str = ""
+    candles:     list[dict] = []      # historique long terme (mois/semaines)
+    indicators:  dict = {}
+    articles:    list[dict] = []
+    geo_events:  list[dict] = []      # événements géopolitiques du jour
+    sector_perf: dict = {}            # performance du secteur cette semaine
+    market_date: str = ""             # date de la séance analysée
+
+
+def _build_cloture_prompt(req: ClotureRequest, patterns: dict, intraday: dict) -> str:
+    ind = req.indicators
+    rsi = ind.get("rsi", 50) or 50
+    price = req.candles[-1]["close"] if req.candles else 0
+    prev_close = req.candles[-2]["close"] if len(req.candles) >= 2 else price
+
+    # ── Historique multi-horizons ──────────────────────────────────────────
+    def perf_n(n):
+        if len(req.candles) <= n: return None
+        p = (req.candles[-1]["close"] - req.candles[-n-1]["close"]) / req.candles[-n-1]["close"] * 100
+        return round(p, 2)
+
+    perf_1j  = perf_n(1)
+    perf_5j  = perf_n(5)
+    perf_20j = perf_n(20)
+    perf_60j = perf_n(60)
+
+    hist_text = f"""
+ÉVOLUTION MULTI-HORIZONS:
+- Performance 1 jour :  {f'{perf_1j:+.2f}%'  if perf_1j  is not None else 'N/A'}
+- Performance 5 jours : {f'{perf_5j:+.2f}%'  if perf_5j  is not None else 'N/A'}  (~1 semaine)
+- Performance 20 jours: {f'{perf_20j:+.2f}%' if perf_20j is not None else 'N/A'}  (~1 mois)
+- Performance 60 jours: {f'{perf_60j:+.2f}%' if perf_60j is not None else 'N/A'}  (~3 mois)
+- Plus haut 60j: {max(c['high']  for c in req.candles[-60:]):.2f}
+- Plus bas  60j: {min(c['low']   for c in req.candles[-60:]):.2f}
+- Clôture:    {price:.2f}  (veille: {prev_close:.2f})
+"""
+
+    # ── Intraday ───────────────────────────────────────────────────────────
+    s = intraday.get("session", {})
+    intra_text = ""
+    if s.get("open"):
+        intra_text = f"""
+SÉANCE DU JOUR (intraday):
+- Ouverture: {s['open']:.2f}  |  Haut: {s.get('high', 'N/A')}  |  Bas: {s.get('low', 'N/A')}
+- VWAP: {s.get('vwap', 'N/A')}  |  Volume: {int(s.get('volume', 0)):,}
+- Variation par rapport à l'ouverture: {f"{s['delta_open']:+.2f}%" if s.get('delta_open') is not None else 'N/A'}
+- État marché: {intraday.get('market_state', 'N/A')}
+- Bougies intraday disponibles: {len(intraday.get('candles', []))}
+"""
+
+    # ── Indicateurs ────────────────────────────────────────────────────────
+    ind_text = f"""
+INDICATEURS TECHNIQUES:
+- RSI(14): {rsi:.1f}  {'🔴 SURVENTE' if rsi < 35 else '🔴 SURACHAT' if rsi > 65 else '🟡 neutre'}
+- MACD: {ind.get('macd', 'N/A')} | Signal: {ind.get('macd_signal', 'N/A')}
+- SMA20: {ind.get('sma20', 'N/A')} | SMA50: {ind.get('sma50', 'N/A')}
+- BB Upper: {ind.get('bb_upper', 'N/A')} | BB Lower: {ind.get('bb_lower', 'N/A')}
+"""
+
+    # ── Contexte sectoriel ─────────────────────────────────────────────────
+    sector_text = ""
+    if req.sector_perf:
+        sector_text = f"""
+CONTEXTE SECTORIEL ({req.sector}):
+- Performance secteur 5j: {req.sector_perf.get('avg_perf_5j', 'N/A')}%
+- Score moyen secteur: {req.sector_perf.get('avg_score', 'N/A')}
+- Potentiel moyen: {req.sector_perf.get('avg_potential', 'N/A')}%
+- Pays du secteur: {', '.join(req.sector_perf.get('countries', []))}
+"""
+
+    # ── Géopolitique ──────────────────────────────────────────────────────
+    geo_text = ""
+    if req.geo_events:
+        geo_lines = "\n".join([
+            f"- [{e.get('signal','?')}] {e.get('title','')}: {e.get('brief','')} (impact: {e.get('impact','?')}, secteurs: {', '.join(e.get('sectors', []))})"
+            for e in req.geo_events[:3]
+        ])
+        geo_text = f"\nÉVÉNEMENTS GÉOPOLITIQUES DU JOUR:\n{geo_lines}"
+
+    # ── News ───────────────────────────────────────────────────────────────
+    news_text = ""
+    if req.articles:
+        news_text = "ACTUALITÉS RÉCENTES:\n" + "\n".join([
+            f"- [{a.get('source','?')}] {a.get('title','')}"
+            for a in req.articles[:5]
+        ])
+
+    # ── Patterns ──────────────────────────────────────────────────────────
+    patterns_text = format_for_prompt(patterns)
+    date_str = req.market_date or time.strftime("%d/%m/%Y")
+
+    return f"""Tu es un analyste financier senior. Effectue une ANALYSE DE CLÔTURE complète pour {req.symbol} ({req.name}) à la date du {date_str}.
+
+CONTEXTE:
+- Secteur: {req.sector or 'Non spécifié'}
+- Indice: {req.index or 'Non spécifié'}
+- Prix de clôture: {price:.2f}
+{hist_text}
+{intra_text}
+{ind_text}
+{patterns_text}
+{sector_text}
+{geo_text}
+{news_text}
+
+Ta mission: produire une analyse de clôture professionnelle qui:
+1. Résume la séance (comportement intraday, volume, momentum)
+2. Évalue la tendance sur chaque horizon (jour, semaine, mois, trimestre)
+3. Intègre le contexte sectoriel et géopolitique
+4. Donne un diagnostic technique précis
+5. Établit un pronostic argumenté pour la prochaine séance et les 5 jours suivants
+6. Identifie les niveaux clés à surveiller (support, résistance, VWAP)
+
+Réponds UNIQUEMENT en JSON valide (sans markdown):
+{{
+  "seance": {{
+    "resume": "2-3 phrases sur le déroulé de la séance",
+    "biais": "HAUSSIER" | "BAISSIER" | "NEUTRE",
+    "volume_signal": "FORT_ACHAT" | "FORT_VENTE" | "NORMAL" | "FAIBLE",
+    "momentum": "ACCÉLÈRE" | "RALENTIT" | "STABLE"
+  }},
+  "tendances": {{
+    "journaliere":   {{ "sens": "HAUSSE"|"BAISSE"|"LATERAL", "force": 1-5, "note": "phrase courte" }},
+    "hebdomadaire":  {{ "sens": "HAUSSE"|"BAISSE"|"LATERAL", "force": 1-5, "note": "phrase courte" }},
+    "mensuelle":     {{ "sens": "HAUSSE"|"BAISSE"|"LATERAL", "force": 1-5, "note": "phrase courte" }},
+    "trimestrielle": {{ "sens": "HAUSSE"|"BAISSE"|"LATERAL", "force": 1-5, "note": "phrase courte" }}
+  }},
+  "niveaux": {{
+    "support_immediat":  nombre,
+    "resistance_immediate": nombre,
+    "vwap":              nombre | null,
+    "objectif_haussier": nombre,
+    "stop_suggere":      nombre
+  }},
+  "contexte": {{
+    "secteur": "impact du secteur sur la valeur (phrase)",
+    "geopolitique": "impact géopolitique pertinent (phrase)",
+    "macro": "contexte macro (phrase)"
+  }},
+  "pronostic": {{
+    "prochaine_seance": {{ "direction": "HAUSSE"|"BAISSE"|"NEUTRE", "cible": nombre, "confiance": 1-10 }},
+    "cinq_jours":       {{ "direction": "HAUSSE"|"BAISSE"|"NEUTRE", "cible": nombre, "confiance": 1-10 }},
+    "verdict": "ACHETER" | "RENFORCER" | "CONSERVER" | "ALLÉGER" | "ÉVITER",
+    "risques": ["risque 1", "risque 2"],
+    "catalyseurs": ["catalyseur 1", "catalyseur 2"]
+  }},
+  "analyse_narrative": "paragraphe complet de 4-6 phrases synthétisant tout"
+}}"""
+
+
+@router.post("/cloture")
+def analyze_cloture(req: ClotureRequest):
+    """
+    Analyse de clôture IA — intègre séance intraday + historique multi-horizons
+    + secteur + géopolitique → Diagnostic & Pronostic complet.
+    """
+    groq_key = os.getenv("GROQ_API_KEY", "")
+    if not groq_key:
+        return {"error": "GROQ_API_KEY non configurée"}
+
+    # Patterns graphiques
+    patterns = detect_patterns(req.candles, req.indicators)
+
+    # Données intraday fraîches (5min bars)
+    try:
+        intraday = get_intraday(req.symbol, "5m")
+    except Exception:
+        intraday = {"candles": [], "session": {}, "market_state": "CLOSED"}
+
+    prompt = _build_cloture_prompt(req, patterns, intraday)
+
+    try:
+        raw    = _call_groq(groq_key, prompt)
+        result = _parse_json(raw)
+        result["patterns_detected"] = patterns
+        result["intraday_session"]  = intraday.get("session", {})
+        return result
+    except Exception as e:
+        print(f"[CLOTURE ERROR] {e}")
+        return {
+            "error": str(e),
+            "patterns_detected": patterns,
+            "seance":   {"resume": "Analyse indisponible", "biais": "NEUTRE"},
+            "pronostic":{"verdict": "CONSERVER", "risques": [], "catalyseurs": []},
         }
 
 

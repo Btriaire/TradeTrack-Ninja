@@ -380,3 +380,115 @@ def get_intraday(symbol: str, interval: str = "5m") -> dict:
     except Exception as e:
         print(f"[INTRADAY] {symbol}/{interval}: {e}")
         return {"symbol": symbol, "candles": [], "session": {}, "market_state": "CLOSED"}
+
+
+# ── Profil société ────────────────────────────────────────────────────────────
+_profile_cache: dict = {}
+PROFILE_TTL = 6 * 3600  # 6 heures
+
+def get_profile(symbol: str) -> dict:
+    """Profil complet de la société via Yahoo Finance quoteSummary."""
+    key = f"profile:{symbol}"
+    entry = _profile_cache.get(key)
+    if entry and (time.time() - entry[0]) < PROFILE_TTL:
+        return entry[1]
+
+    modules = "assetProfile,defaultKeyStatistics,financialData,summaryDetail,price"
+    url = f"https://query1.finance.yahoo.com/v10/finance/quoteSummary/{symbol}"
+
+    try:
+        r = httpx.get(
+            url,
+            params={"modules": modules, "formatted": "false"},
+            headers=HEADERS,
+            timeout=12,
+            follow_redirects=True,
+        )
+        data = r.json()
+        result = data.get("quoteSummary", {}).get("result")
+        if not result:
+            err = data.get("quoteSummary", {}).get("error", {})
+            print(f"[PROFILE] {symbol} erreur: {err}")
+            return {}
+
+        res = result[0]
+
+        # ── assetProfile ──────────────────────────────────────────────────
+        asset = res.get("assetProfile", {})
+        # CEO : premier officier avec "Chief Executive" dans le titre
+        officers = asset.get("companyOfficers", [])
+        ceo = next(
+            (o.get("name", "") for o in officers
+             if "chief executive" in o.get("title", "").lower()
+             or "ceo" in o.get("title", "").lower()),
+            officers[0].get("name", "") if officers else ""
+        )
+        # Année de fondation (rarement disponible dans YF, on met null)
+        founded = asset.get("foundedYear") or None
+
+        # ── summaryDetail ────────────────────────────────────────────────
+        sd = res.get("summaryDetail", {})
+
+        # ── defaultKeyStatistics ─────────────────────────────────────────
+        ks = res.get("defaultKeyStatistics", {})
+
+        # ── financialData ────────────────────────────────────────────────
+        fd = res.get("financialData", {})
+
+        # ── price ────────────────────────────────────────────────────────
+        pr = res.get("price", {})
+
+        def val(d: dict, *keys):
+            """Extrait la valeur numérique brute (pas le dict formatted)."""
+            for k in keys:
+                v = d.get(k)
+                if v is None:
+                    continue
+                if isinstance(v, dict):
+                    v = v.get("raw") or v.get("fmt") or None
+                if v is not None:
+                    return v
+            return None
+
+        profile = {
+            # Identité
+            "symbol":       symbol,
+            "name":         val(pr, "longName", "shortName") or symbol,
+            "sector":       asset.get("sector", ""),
+            "industry":     asset.get("industry", ""),
+            "country":      asset.get("country", ""),
+            "city":         asset.get("city", ""),
+            "website":      asset.get("website", ""),
+            "description":  asset.get("longBusinessSummary", ""),
+            "employees":    val(asset, "fullTimeEmployees"),
+            "ceo":          ceo,
+            "founded":      founded,
+            # Valorisation
+            "market_cap":   val(pr, "marketCap"),
+            "enterprise_value": val(ks, "enterpriseValue"),
+            "pe_trailing":  val(sd, "trailingPE"),
+            "pe_forward":   val(ks, "forwardPE"),
+            "peg_ratio":    val(ks, "pegRatio"),
+            "price_to_book": val(ks, "priceToBook"),
+            "beta":         val(ks, "beta"),
+            "dividend_yield": val(sd, "dividendYield"),
+            "52w_high":     val(sd, "fiftyTwoWeekHigh"),
+            "52w_low":      val(sd, "fiftyTwoWeekLow"),
+            # Financiers
+            "revenue":      val(fd, "totalRevenue"),
+            "revenue_growth": val(fd, "revenueGrowth"),
+            "ebitda":       val(fd, "ebitda"),
+            "profit_margin": val(fd, "profitMargins"),
+            "roe":          val(fd, "returnOnEquity"),
+            "debt_to_equity": val(fd, "debtToEquity"),
+            "current_ratio": val(fd, "currentRatio"),
+            "currency":     val(pr, "currency"),
+        }
+
+        print(f"[PROFILE] {symbol}: ok (secteur={profile['sector']})")
+        _profile_cache[key] = (time.time(), profile)
+        return profile
+
+    except Exception as e:
+        print(f"[PROFILE ERROR] {symbol}: {e}")
+        return {}

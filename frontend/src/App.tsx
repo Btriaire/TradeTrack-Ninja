@@ -3,7 +3,7 @@ import { useQuery } from '@tanstack/react-query'
 import {
   BarChart2, Newspaper, Calculator, Sparkles,
   Activity, Menu, X, Monitor, Smartphone, RotateCcw,
-  Search, PieChart, Zap, Globe, TrendingUp, Rss, Stethoscope,
+  Search, PieChart, Zap, Globe, TrendingUp, Rss, Stethoscope, Telescope, Building2,
 } from 'lucide-react'
 // Activity est déjà importé ci-dessus — utilisé pour le bouton Intraday
 import { Watchlist }      from './components/Watchlist'
@@ -13,6 +13,8 @@ import { NewsPanel }      from './components/NewsPanel'
 import { OrderSimulator } from './components/OrderSimulator'
 import { AIPanel }        from './components/AIPanel'
 import { DiagnosticPanel } from './components/DiagnosticPanel'
+import { CloturePanel }     from './components/CloturePanel'
+import { CompanyProfile }  from './components/CompanyProfile'
 import { IntradayChart }   from './components/IntradayChart'
 import { AuthButton }     from './components/AuthButton'
 import { IndicesBar }     from './components/IndicesBar'
@@ -67,7 +69,7 @@ const SYMBOL_META: Record<string, { sector: string; index: string; name: string 
 }
 
 // ── Onglets spécifiques à une valeur ─────────────────────────────────────────
-type StockTab = 'chart' | 'news' | 'simulator' | 'ai' | 'diagnostic' | 'portfolio'
+type StockTab = 'chart' | 'news' | 'simulator' | 'ai' | 'diagnostic' | 'cloture' | 'fiche' | 'portfolio'
 
 const STOCK_TABS: { id: StockTab; label: string; icon: any }[] = [
   { id: 'chart',      label: 'Graphique',   icon: BarChart2    },
@@ -75,6 +77,8 @@ const STOCK_TABS: { id: StockTab; label: string; icon: any }[] = [
   { id: 'simulator',  label: 'Simulateur',  icon: Calculator   },
   { id: 'ai',         label: 'Analyse IA',  icon: Sparkles     },
   { id: 'diagnostic', label: 'Diagnostic',  icon: Stethoscope  },
+  { id: 'cloture',    label: 'Clôture IA',  icon: Telescope    },
+  { id: 'fiche',      label: 'Fiche',       icon: Building2    },
   { id: 'portfolio',  label: 'Portfolio',   icon: PieChart     },
 ]
 
@@ -353,6 +357,20 @@ export default function App() {
                   index={SYMBOL_META[symbol]?.index || ''}
                   candles={candles}
                   indicators={indicators}
+                  articles={articles}
+                />
+              )}
+              {activeTab === 'fiche' && (
+                <CompanyProfile symbol={symbol} />
+              )}
+              {activeTab === 'cloture' && (
+                <CloturePanel
+                  symbol={symbol}
+                  name={SYMBOL_META[symbol]?.name || symbol}
+                  sector={SYMBOL_META[symbol]?.sector || ''}
+                  index={SYMBOL_META[symbol]?.index || ''}
+                  candles={candles}
+                  indicators={indicators || {}}
                   articles={articles}
                 />
               )}

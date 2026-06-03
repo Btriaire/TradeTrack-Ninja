@@ -1,6 +1,6 @@
 from fastapi import APIRouter, HTTPException
 import httpx
-from services.yahoo_finance import get_quote, get_history, get_indicators, get_live_quote, get_intraday
+from services.yahoo_finance import get_quote, get_history, get_indicators, get_live_quote, get_intraday, get_profile
 
 router = APIRouter(prefix="/stocks", tags=["stocks"])
 
@@ -63,6 +63,20 @@ def live(symbol: str):
 def intraday(symbol: str, interval: str = "5m"):
     """Bougies intraday du jour (1m/5m/15m/30m) + stats séance (VWAP, H/L/Vol)."""
     return get_intraday(symbol.upper(), interval)
+
+
+@router.get("/profile/{symbol}")
+def profile(symbol: str):
+    """Profil complet de la société : secteur, CEO, CA, EBITDA, ratios…"""
+    try:
+        data = get_profile(symbol.upper())
+        if not data:
+            raise HTTPException(404, f"Profil introuvable pour {symbol}")
+        return data
+    except HTTPException:
+        raise
+    except Exception as e:
+        raise HTTPException(500, str(e))
 
 
 @router.get("/history/{symbol}")

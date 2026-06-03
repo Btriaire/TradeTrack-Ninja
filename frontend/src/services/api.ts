@@ -88,3 +88,19 @@ export const analyzeDiagnostic = (payload: {
   articles: object[]
   with_explanation: boolean
 }) => api.post('/analysis/diagnostic', payload).then(r => r.data)
+
+export const getProfile = (symbol: string) =>
+  api.get(`/stocks/profile/${symbol}`).then(r => r.data)
+
+export const analyzeClotureIA = (payload: {
+  symbol:      string
+  name:        string
+  sector:      string
+  index:       string
+  candles:     object[]
+  indicators:  object
+  articles:    object[]
+  geo_events:  object[]
+  sector_perf: object
+  market_date: string
+}) => api.post('/analysis/cloture', payload).then(r => r.data)
