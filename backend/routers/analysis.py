@@ -1,10 +1,11 @@
 from fastapi import APIRouter
 from pydantic import BaseModel
 import os, json, time
+import httpx
 
 router = APIRouter(prefix="/analysis", tags=["analysis"])
 
-# Modèles essayés dans l'ordre (lite en premier = quota plus généreux)
+GEMINI_BASE = "https://generativelanguage.googleapis.com/v1beta/models"
 GEMINI_MODELS = [
     "gemini-2.0-flash-lite",
     "gemini-1.5-flash",
@@ -18,18 +19,34 @@ class AnalysisRequest(BaseModel):
     indicators: dict = {}
 
 
+def _call_gemini(api_key: str, model: str, prompt: str) -> str:
+    """Appel direct à l'API REST Gemini — compatible tous formats de clé."""
+    url = f"{GEMINI_BASE}/{model}:generateContent"
+    payload = {
+        "contents": [{"parts": [{"text": prompt}]}],
+        "generationConfig": {
+            "temperature": 0.3,
+            "maxOutputTokens": 1024,
+        },
+    }
+    r = httpx.post(
+        url,
+        params={"key": api_key},
+        json=payload,
+        timeout=30,
+        headers={"Content-Type": "application/json"},
+    )
+    if r.status_code != 200:
+        raise ValueError(f"HTTP {r.status_code}: {r.text[:200]}")
+    data = r.json()
+    return data["candidates"][0]["content"]["parts"][0]["text"]
+
+
 @router.post("/sentiment")
 def analyze_sentiment(req: AnalysisRequest):
     api_key = os.getenv("GEMINI_API_KEY", "")
     if not api_key:
         return _mock_analysis(req.symbol, "GEMINI_API_KEY manquant dans Render > Environment")
-
-    try:
-        from google import genai
-    except ImportError as e:
-        return _mock_analysis(req.symbol, f"Package google-genai non installé: {e}")
-
-    client = genai.Client(api_key=api_key)
 
     articles_text = "\n".join([
         f"[{a.get('source','?')}] {a.get('title','')}: {a.get('summary','')}"
@@ -71,9 +88,8 @@ Réponds UNIQUEMENT en JSON valide (sans markdown, sans ```):
     for model in GEMINI_MODELS:
         for attempt in range(2):
             try:
-                print(f"[GEMINI] {model} — essai {attempt + 1}")
-                response = client.models.generate_content(model=model, contents=prompt)
-                text = response.text.strip()
+                print(f"[GEMINI] {model} essai {attempt + 1}")
+                text = _call_gemini(api_key, model, prompt)
                 if "```" in text:
                     text = text.split("```")[1]
                     if text.startswith("json"):
@@ -81,49 +97,38 @@ Réponds UNIQUEMENT en JSON valide (sans markdown, sans ```):
                 start = text.find("{")
                 end   = text.rfind("}") + 1
                 if start == -1 or end == 0:
-                    raise ValueError(f"Pas de JSON dans: {text[:100]}")
+                    raise ValueError(f"Pas de JSON: {text[:100]}")
                 return json.loads(text[start:end])
 
             except Exception as e:
-                last_error = f"{type(e).__name__} ({model}): {str(e)[:120]}"
+                last_error = f"{model}: {str(e)[:150]}"
                 print(f"[GEMINI ERROR] {last_error}")
-                if "429" in str(e):
+                if "429" in str(e) or "RESOURCE_EXHAUSTED" in str(e):
                     if attempt == 0:
-                        print("[GEMINI] 429 — attente 15s")
                         time.sleep(15)
                     else:
-                        break  # Passer au modèle suivant
+                        break
                 else:
-                    break  # Erreur non-quota → passer au modèle suivant
+                    break
 
     return _mock_analysis(req.symbol, last_error)
 
 
 @router.get("/debug")
 def debug_gemini():
-    """Teste la connexion Gemini avec chaque modèle disponible."""
+    """Teste l'API Gemini REST directement."""
     api_key = os.getenv("GEMINI_API_KEY", "")
     if not api_key:
         return {"status": "KO", "error": "GEMINI_API_KEY manquant"}
 
-    try:
-        from google import genai
-    except ImportError as e:
-        return {"status": "KO", "error": f"Import: {e}"}
-
-    client  = genai.Client(api_key=api_key)
     results = {}
-
     for model in GEMINI_MODELS:
         try:
-            r = client.models.generate_content(
-                model=model,
-                contents='{"status":"ok"}',
-            )
-            results[model] = {"ok": True, "response": r.text[:80]}
-            break  # Un seul modèle qui marche suffit
+            text = _call_gemini(api_key, model, 'Dis juste "ok"')
+            results[model] = {"ok": True, "response": text[:80]}
+            break
         except Exception as e:
-            results[model] = {"ok": False, "error": f"{type(e).__name__}: {str(e)[:120]}"}
+            results[model] = {"ok": False, "error": str(e)[:150]}
 
     any_ok = any(v["ok"] for v in results.values())
     return {
@@ -138,7 +143,7 @@ def _mock_analysis(symbol: str, reason: str = "") -> dict:
         "sentiment":   "NEUTRE",
         "score":       0,
         "resume":      f"Analyse IA indisponible pour {symbol}. {reason}",
-        "points_cles": ["Créez une nouvelle clé sur aistudio.google.com/app/apikey"],
-        "risques":     [reason] if reason else ["Quota Gemini épuisé"],
+        "points_cles": ["Vérifiez la clé GEMINI_API_KEY sur aistudio.google.com"],
+        "risques":     [reason] if reason else ["Clé API invalide ou quota épuisé"],
         "horizon":     "Court terme (< 1 mois)",
     }
