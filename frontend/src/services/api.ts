@@ -10,6 +10,9 @@ const api = axios.create({ baseURL: BASE_URL })
 export const getQuote = (symbol: string): Promise<Quote> =>
   api.get(`/stocks/quote/${symbol}`).then(r => r.data)
 
+export const getLiveQuote = (symbol: string) =>
+  api.get(`/stocks/live/${symbol}`).then(r => r.data)
+
 export const getHistory = (symbol: string, period = '6mo', interval = '1d'): Promise<Candle[]> =>
   api.get(`/stocks/history/${symbol}`, { params: { period, interval } }).then(r => r.data)
 

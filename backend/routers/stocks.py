@@ -1,6 +1,6 @@
 from fastapi import APIRouter, HTTPException
 import httpx
-from services.yahoo_finance import get_quote, get_history, get_indicators
+from services.yahoo_finance import get_quote, get_history, get_indicators, get_live_quote
 
 router = APIRouter(prefix="/stocks", tags=["stocks"])
 
@@ -51,6 +51,12 @@ def quote(symbol: str):
         raise
     except Exception as e:
         raise HTTPException(500, str(e))
+
+
+@router.get("/live/{symbol}")
+def live(symbol: str):
+    """Quote pseudo-temps-réel : cache 8s, bougies 2min, marketState inclus."""
+    return get_live_quote(symbol.upper())
 
 
 @router.get("/history/{symbol}")

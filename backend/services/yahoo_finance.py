@@ -171,6 +171,77 @@ def get_quote(symbol: str) -> dict:
         return {"symbol": symbol, "price": None, "error": str(e)}
 
 
+# ── Live quote (cache 8s, intervalle 2m) ─────────────────────────────────────
+_live_cache: dict = {}
+LIVE_TTL = 8   # secondes — fraîcheur maximale sans spammer Yahoo
+
+def get_live_quote(symbol: str) -> dict:
+    """
+    Prix le plus récent disponible (Yahoo ~15min de délai sur abonnement gratuit).
+    Cache 8s pour permettre un polling frontend régulier sans saturer Yahoo.
+    """
+    key   = f"live:{symbol}"
+    entry = _live_cache.get(key)
+    if entry and (time.time() - entry[0]) < LIVE_TTL:
+        return entry[1]
+
+    url = f"https://query1.finance.yahoo.com/v8/finance/chart/{symbol}"
+    try:
+        r = httpx.get(url, params={
+            "interval":       "2m",   # bougies 2min → dernière clôture très récente
+            "range":          "1d",
+            "includePrePost": "true",
+        }, headers=HEADERS, timeout=10, follow_redirects=True)
+
+        data   = r.json()
+        result = data.get("chart", {}).get("result")
+        if not result:
+            return {"symbol": symbol, "price": None, "market_state": "CLOSED", "is_open": False}
+
+        meta         = result[0].get("meta", {})
+        price        = _clean(meta.get("regularMarketPrice"))
+        prev         = _clean(meta.get("chartPreviousClose") or meta.get("previousClose"))
+        market_state = meta.get("marketState", "CLOSED")   # REGULAR | PRE | POST | CLOSED
+        mkt_time     = meta.get("regularMarketTime")        # unix timestamp
+
+        change, pct = None, None
+        if price and prev and prev != 0:
+            change = round(price - prev, 2)
+            pct    = round((price - prev) / prev * 100, 2)
+
+        # Dernière bougie 2min si disponible (prix intraday frais)
+        q0      = result[0].get("indicators", {}).get("quote", [{}])[0]
+        closes  = [c for c in q0.get("close", []) if c is not None]
+        if closes and market_state == "REGULAR":
+            fresh = _clean(closes[-1])
+            if fresh:
+                price  = fresh
+                if prev and prev != 0:
+                    change = round(price - prev, 2)
+                    pct    = round(change / prev * 100, 2)
+
+        out = {
+            "symbol":       symbol,
+            "price":        price,
+            "change":       change,
+            "change_pct":   pct,
+            "volume":       meta.get("regularMarketVolume"),
+            "high":         _clean(meta.get("regularMarketDayHigh")),
+            "low":          _clean(meta.get("regularMarketDayLow")),
+            "market_state": market_state,
+            "market_time":  mkt_time,
+            "is_open":      market_state == "REGULAR",
+            "currency":     meta.get("currency", "EUR"),
+            "delay_min":    15,   # délai Yahoo Finance gratuit en minutes
+        }
+        _live_cache[key] = (time.time(), out)
+        return out
+
+    except Exception as e:
+        print(f"[LIVE QUOTE] {symbol}: {e}")
+        return {"symbol": symbol, "price": None, "market_state": "CLOSED", "is_open": False}
+
+
 # ── Indicateurs techniques ───────────────────────────────────────────────────
 def get_indicators(symbol: str, period: str = "6mo") -> dict:
     candles = get_history(symbol, period)
