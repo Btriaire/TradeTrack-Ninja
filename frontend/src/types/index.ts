@@ -66,3 +66,29 @@ export interface WatchlistItem {
   symbol: string
   name: string
 }
+
+export interface SearchResult {
+  symbol: string
+  name: string
+  exchange: string
+  type: string
+  market: string
+}
+
+export interface MarketIndex {
+  name: string
+  symbol: string
+  price: number
+  change_pct: number
+  change: number
+}
+
+export interface PortfolioPosition {
+  id: string
+  symbol: string
+  name: string
+  quantity: number
+  buy_price: number
+  buy_date: string
+  notes?: string
+}

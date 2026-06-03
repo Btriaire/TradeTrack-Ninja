@@ -1,5 +1,8 @@
 import axios from 'axios'
-import type { Quote, Candle, Indicators, Article, FeeBreakdown, AIAnalysis } from '../types'
+import type {
+  Quote, Candle, Indicators, Article, FeeBreakdown,
+  AIAnalysis, SearchResult, MarketIndex,
+} from '../types'
 
 const BASE_URL = import.meta.env.VITE_API_URL ?? '/api'
 const api = axios.create({ baseURL: BASE_URL })
@@ -15,6 +18,12 @@ export const getIndicators = (symbol: string): Promise<Indicators> =>
 
 export const getNews = (symbol?: string): Promise<Article[]> =>
   api.get('/news/', { params: symbol ? { symbol } : {} }).then(r => r.data)
+
+export const searchStocks = (q: string, market = 'ALL'): Promise<SearchResult[]> =>
+  api.get('/stocks/search', { params: { q, market } }).then(r => r.data)
+
+export const getIndices = (): Promise<MarketIndex[]> =>
+  api.get('/stocks/indices').then(r => r.data)
 
 export const simulateOrder = (payload: {
   montant: number
