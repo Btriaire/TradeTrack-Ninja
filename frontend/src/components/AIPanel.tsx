@@ -26,9 +26,6 @@ export function AIPanel({ symbol, articles, indicators }: Props) {
         <div className="flex items-center gap-2">
           <Sparkles size={15} className="text-blue-400" />
           <span className="text-sm font-semibold text-white">Analyse IA</span>
-          <span className="text-xs bg-gradient-to-r from-violet-500 to-purple-400 text-white px-2 py-0.5 rounded-full font-semibold">
-            Groq · Llama 3
-          </span>
         </div>
         <button
           onClick={() => mutation.mutate()}
