@@ -67,6 +67,35 @@ async def debug_news():
     return results
 
 
+@app.get("/debug/quote/{symbol}")
+async def debug_quote(symbol: str):
+    """Teste la cotation Yahoo Finance pour un symbole donné."""
+    import httpx
+    HEADERS = {
+        "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 Chrome/120.0.0.0 Safari/537.36",
+        "Accept-Language": "fr-FR,fr;q=0.9,en;q=0.8",
+        "Referer": "https://finance.yahoo.com/",
+    }
+    try:
+        async with httpx.AsyncClient(headers=HEADERS, timeout=10) as client:
+            r = await client.get(
+                "https://query1.finance.yahoo.com/v8/finance/quote",
+                params={"symbols": symbol},
+            )
+        raw = r.json()
+        result = raw.get("quoteResponse", {}).get("result", [])
+        return {
+            "symbol": symbol,
+            "status": r.status_code,
+            "found":  len(result) > 0,
+            "price":  result[0].get("regularMarketPrice") if result else None,
+            "change_pct": result[0].get("regularMarketChangePercent") if result else None,
+            "raw_keys": list(result[0].keys()) if result else [],
+        }
+    except Exception as e:
+        return {"symbol": symbol, "error": str(e)}
+
+
 @app.get("/debug/av/{symbol}")
 def debug_alphavantage(symbol: str):
     import os, httpx
