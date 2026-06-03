@@ -60,6 +60,9 @@ export const getGeneralNews = (category = 'Tout') =>
 export const getSignals = () =>
   api.get('/signals/daily').then(r => r.data)
 
+export const getGameOfDay = () =>
+  api.get('/signals/game').then(r => r.data)
+
 export const refreshSignals = () =>
   api.post('/signals/refresh').then(r => r.data)
 
