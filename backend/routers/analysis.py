@@ -25,6 +25,7 @@ class AnalysisRequest(BaseModel):
     articles:      list[dict]
     indicators:    dict = {}
     prompt_config: Optional[PromptConfig] = None
+    candles:       list[dict] = []   # historique OHLCV pour analyse approfondie
 
 
 # ── Groq ─────────────────────────────────────────────────────────────────────
@@ -79,7 +80,32 @@ def _parse_json(text: str) -> dict:
 
 
 # ── Construction du prompt ────────────────────────────────────────────────────
-def _build_prompt(symbol: str, articles: list, indicators: dict, cfg: PromptConfig) -> str:
+def _build_candles_summary(candles: list) -> str:
+    """Résumé lisible de l'historique de cours pour le prompt."""
+    if not candles:
+        return ""
+    first, last = candles[0], candles[-1]
+    perf = ((last['close'] - first['close']) / first['close'] * 100) if first['close'] else 0
+    high = max(c['high'] for c in candles)
+    low  = min(c['low']  for c in candles)
+    # Variation des 5 dernières séances
+    recent = candles[-5:]
+    recent_lines = " | ".join(
+        f"{c['time']}: {c['close']:.2f} ({'▲' if c['close']>=c['open'] else '▼'})"
+        for c in recent
+    )
+    return f"""
+Historique des cours ({len(candles)} séances):
+- Du {first['time']} au {last['time']}
+- Performance période: {perf:+.2f}%
+- Plus haut: {high:.2f} | Plus bas: {low:.2f}
+- Clôture actuelle: {last['close']:.2f}
+- Volume moyen: {int(sum(c['volume'] for c in candles)/len(candles)):,}
+- 5 dernières séances: {recent_lines}
+"""
+
+
+def _build_prompt(symbol: str, articles: list, indicators: dict, cfg: PromptConfig, candles: list = []) -> str:
     # Langue
     lang_instr = "Réponds en français." if cfg.langue == "fr" else "Answer in English."
 
@@ -128,6 +154,9 @@ Indicateurs techniques:
         for a in articles[:8]
     ]) or "Aucun article disponible."
 
+    # Historique de cours (mode analyse approfondie)
+    candles_text = _build_candles_summary(candles) if candles else ""
+
     # Instructions perso
     custom = f"\nInstructions supplémentaires: {cfg.instructions.strip()}" if cfg.instructions.strip() else ""
 
@@ -155,7 +184,7 @@ Indicateurs techniques:
 {lang_instr} {horizon_instr} {focus_instr}
 
 Analyse les informations suivantes sur {symbol}.
-{ind_text}
+{ind_text}{candles_text}
 Articles récents:
 {articles_text}
 {custom}
@@ -168,7 +197,7 @@ Réponds UNIQUEMENT en JSON valide (sans markdown, sans ```):
 @router.post("/sentiment")
 def analyze_sentiment(req: AnalysisRequest):
     cfg        = req.prompt_config or PromptConfig()
-    prompt     = _build_prompt(req.symbol, req.articles, req.indicators, cfg)
+    prompt     = _build_prompt(req.symbol, req.articles, req.indicators, cfg, req.candles)
     groq_key   = os.getenv("GROQ_API_KEY", "")
     gemini_key = os.getenv("GEMINI_API_KEY", "")
 

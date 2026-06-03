@@ -232,7 +232,7 @@ export default function App() {
           {activeTab === 'chart'     && <StockChart candles={candles} indicators={indicators} symbol={symbol} />}
           {activeTab === 'news'      && <NewsPanel symbol={symbol} />}
           {activeTab === 'simulator' && <OrderSimulator symbol={symbol} currentPrice={quote?.price} />}
-          {activeTab === 'ai'        && <AIPanel symbol={symbol} articles={articles} indicators={indicators} />}
+          {activeTab === 'ai'        && <AIPanel symbol={symbol} articles={articles} indicators={indicators} candles={candles} />}
         </main>
       </div>
 

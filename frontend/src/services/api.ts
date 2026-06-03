@@ -35,5 +35,6 @@ export const analyzeSentiment = (payload: {
   articles: Article[]
   indicators: Indicators | {}
   prompt_config?: object
+  candles?: object[]
 }): Promise<AIAnalysis> =>
   api.post('/analysis/sentiment', payload).then(r => r.data)

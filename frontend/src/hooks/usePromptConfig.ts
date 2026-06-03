@@ -4,16 +4,18 @@ export interface PromptConfig {
   style:        'journalistique' | 'technique' | 'synthétique' | 'pessimiste' | 'optimiste'
   horizon:      'court' | 'moyen' | 'long' | 'auto'
   focus:        { fondamentaux: boolean; technique: boolean; actualites: boolean; risques: boolean }
-  instructions: string   // texte libre ajouté à la fin du prompt
+  instructions: string
   langue:       'fr' | 'en'
+  deep_analysis: boolean   // analyse approfondie avec historique de prix
 }
 
 const DEFAULT: PromptConfig = {
-  style:        'journalistique',
-  horizon:      'auto',
-  focus:        { fondamentaux: true, technique: true, actualites: true, risques: true },
-  instructions: '',
-  langue:       'fr',
+  style:         'journalistique',
+  horizon:       'auto',
+  focus:         { fondamentaux: true, technique: true, actualites: true, risques: true },
+  instructions:  '',
+  langue:        'fr',
+  deep_analysis: false,
 }
 
 function load(): PromptConfig {

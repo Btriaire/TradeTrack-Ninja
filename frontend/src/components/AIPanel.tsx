@@ -12,6 +12,7 @@ interface Props {
   symbol:      string
   articles:    Article[]
   indicators?: Indicators
+  candles?:    any[]
 }
 
 // ── Composant config ─────────────────────────────────────────────────────────
@@ -141,6 +142,28 @@ function PromptConfigPanel({ onClose }: { onClose: () => void }) {
         </div>
       </div>
 
+      {/* Analyse approfondie */}
+      <div>
+        <label className="flex items-center justify-between cursor-pointer">
+          <div>
+            <div className="text-xs text-slate-300 font-medium">Analyse approfondie</div>
+            <div className="text-xs text-slate-600 mt-0.5">
+              Inclut l'historique des cours, les variations récentes et les news filtrées par action
+            </div>
+          </div>
+          <div
+            onClick={() => update({ deep_analysis: !config.deep_analysis })}
+            className={`relative w-10 h-5 rounded-full transition-colors cursor-pointer shrink-0 ml-3 ${
+              config.deep_analysis ? 'bg-accent-blue' : 'bg-dark-500'
+            }`}
+          >
+            <div className={`absolute top-0.5 w-4 h-4 rounded-full bg-white transition-transform ${
+              config.deep_analysis ? 'translate-x-5' : 'translate-x-0.5'
+            }`} />
+          </div>
+        </label>
+      </div>
+
       {/* Instructions libres */}
       <div>
         <label className="text-xs text-slate-500 block mb-1.5">
@@ -149,8 +172,8 @@ function PromptConfigPanel({ onClose }: { onClose: () => void }) {
         </label>
         <textarea
           value={config.instructions}
-          onChange={e => update({ instructions: e.target.value })}
-          placeholder="Ex: Concentre-toi sur les catalyseurs de court terme. Mentionne les niveaux techniques clés. Compare avec le secteur..."
+          onChange={e => update({ instructions: e.target.value.slice(0, 500) })}
+          placeholder="Ex: Concentre-toi sur les catalyseurs de court terme. Mentionne les niveaux supports/résistances. Compare avec le secteur..."
           rows={3}
           className="w-full bg-dark-600 text-white text-xs rounded-lg px-3 py-2 outline-none border border-dark-500 focus:border-accent-blue/50 placeholder:text-slate-600 resize-none"
         />
@@ -164,7 +187,7 @@ function PromptConfigPanel({ onClose }: { onClose: () => void }) {
 
 
 // ── Panel principal ──────────────────────────────────────────────────────────
-export function AIPanel({ symbol, articles, indicators }: Props) {
+export function AIPanel({ symbol, articles, indicators, candles = [] }: Props) {
   const [showConfig, setShowConfig] = useState(false)
   const { config } = usePromptConfig()
 
@@ -174,6 +197,8 @@ export function AIPanel({ symbol, articles, indicators }: Props) {
       articles: articles.slice(0, 8),
       indicators: indicators ?? {},
       prompt_config: config,
+      // En mode analyse approfondie, on envoie aussi l'historique des cours
+      candles: config.deep_analysis ? candles.slice(-60) : [],
     }),
   })
 
@@ -228,6 +253,11 @@ export function AIPanel({ symbol, articles, indicators }: Props) {
           {config.instructions && (
             <span className="text-xs bg-dark-600 text-slate-400 px-2 py-0.5 rounded-full">
               + instructions perso
+            </span>
+          )}
+          {config.deep_analysis && (
+            <span className="text-xs bg-purple-500/20 text-purple-400 px-2 py-0.5 rounded-full">
+              🔬 Approfondie
             </span>
           )}
         </div>
