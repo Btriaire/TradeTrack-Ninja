@@ -3,6 +3,7 @@ from pydantic import BaseModel
 from typing import Optional
 import os, json, time
 import httpx
+from services.pattern_detector import detect_patterns, format_for_prompt
 
 router = APIRouter(prefix="/analysis", tags=["analysis"])
 
@@ -25,7 +26,18 @@ class AnalysisRequest(BaseModel):
     articles:      list[dict]
     indicators:    dict = {}
     prompt_config: Optional[PromptConfig] = None
-    candles:       list[dict] = []   # historique OHLCV pour analyse approfondie
+    candles:       list[dict] = []
+
+
+class DiagnosticRequest(BaseModel):
+    symbol:      str
+    name:        str = ""
+    sector:      str = ""
+    index:       str = ""
+    candles:     list[dict] = []
+    indicators:  dict = {}
+    articles:    list[dict] = []
+    with_explanation: bool = False
 
 
 # ── Groq ─────────────────────────────────────────────────────────────────────
@@ -191,6 +203,131 @@ Articles récents:
 
 Réponds UNIQUEMENT en JSON valide (sans markdown, sans ```):
 {schema}"""
+
+
+# ── Diagnostic & Pronostic ────────────────────────────────────────────────────
+def _build_diagnostic_prompt(req: DiagnosticRequest, patterns: dict) -> str:
+    ind = req.indicators
+    rsi = ind.get("rsi", 50) or 50
+
+    # Résumé indicateurs
+    ind_text = f"""
+INDICATEURS TECHNIQUES:
+- RSI(14): {rsi:.1f} {'🔴 SURVENTE' if rsi < 35 else '🔴 SURACHAT' if rsi > 65 else '🟡 neutre'}
+- MACD: {ind.get('macd', 'N/A')} | Signal: {ind.get('macd_signal', 'N/A')} → {'momentum HAUSSIER' if (ind.get('macd') or 0) > (ind.get('macd_signal') or 0) else 'momentum BAISSIER'}
+- SMA20: {ind.get('sma20', 'N/A')} | SMA50: {ind.get('sma50', 'N/A')}
+- Bollinger Upper: {ind.get('bb_upper', 'N/A')} | Lower: {ind.get('bb_lower', 'N/A')}
+- Signal calculé: {ind.get('signal', 'NEUTRE')}
+"""
+
+    # Résumé cours historique
+    candles_text = ""
+    if req.candles:
+        c = req.candles
+        perf_total = ((c[-1]['close'] - c[0]['close']) / c[0]['close'] * 100) if c[0]['close'] else 0
+        candles_text = f"""
+HISTORIQUE DES COURS ({len(c)} séances):
+- De {c[0]['time']} à {c[-1]['time']}
+- Performance période: {perf_total:+.2f}%
+- Plus haut: {max(x['high'] for x in c):.2f} | Plus bas: {min(x['low'] for x in c):.2f}
+- Clôture actuelle: {c[-1]['close']:.2f}
+- Dernières 5 séances: {' | '.join(f"{x['time'][-5:]}: {x['close']:.2f}" for x in c[-5:])}
+"""
+
+    # News
+    news_text = ""
+    if req.articles:
+        news_text = "ACTUALITÉS RÉCENTES:\n" + "\n".join([
+            f"- [{a.get('source','?')}] {a.get('title','')}"
+            for a in req.articles[:6]
+        ])
+
+    # Patterns graphiques
+    patterns_text = format_for_prompt(patterns)
+
+    explanation_instr = """
+- "explanation": une analyse narrative détaillée de 3-5 paragraphes (diagnostic complet + contexte + pronostic argumenté)
+""" if req.with_explanation else '- "explanation": ""'
+
+    price = req.candles[-1]['close'] if req.candles else 0
+
+    return f"""Tu es un analyste financier senior expert. Analyse de manière holistique la valeur {req.symbol} ({req.name}).
+
+CONTEXTE:
+- Secteur: {req.sector or 'Non spécifié'}
+- Indice: {req.index or 'Non spécifié'}
+- Prix actuel: {price:.2f}
+
+{ind_text}
+{patterns_text}
+{candles_text}
+{news_text}
+
+Fournis un DIAGNOSTIC complet et un PRONOSTIC structuré. Intègre:
+1. L'analyse technique (patterns, indicateurs, tendance)
+2. Le sentiment des actualités récentes
+3. Le contexte sectoriel et macroéconomique général
+4. Les niveaux clés supports/résistances
+
+Réponds UNIQUEMENT en JSON valide (pas de markdown):
+{{
+  "diagnostic": {{
+    "etat": "HAUSSIER" | "BAISSIER" | "NEUTRE",
+    "force": entier 1-10,
+    "technique": "phrase courte sur état technique",
+    "pattern_principal": "pattern graphique dominant",
+    "support": nombre ou null,
+    "resistance": nombre ou null,
+    "sentiment_news": "POSITIF" | "NÉGATIF" | "NEUTRE",
+    "resume": "2-3 phrases de diagnostic holistique"
+  }},
+  "pronostic": {{
+    "court_terme": {{
+      "horizon": "1-5 jours",
+      "direction": "HAUSSE" | "BAISSE" | "LATÉRAL",
+      "cible_prix": nombre,
+      "confiance": entier 1-10
+    }},
+    "moyen_terme": {{
+      "horizon": "2-4 semaines",
+      "direction": "HAUSSE" | "BAISSE" | "LATÉRAL",
+      "cible_prix": nombre,
+      "confiance": entier 1-10
+    }},
+    "risques": ["risque 1", "risque 2", "risque 3"],
+    "catalyseurs": ["catalyseur 1", "catalyseur 2"],
+    "verdict": "ACHETER" | "RENFORCER" | "CONSERVER" | "ALLÉGER" | "ÉVITER"
+  }},
+  {explanation_instr.strip()}
+}}"""
+
+
+@router.post("/diagnostic")
+def analyze_diagnostic(req: DiagnosticRequest):
+    """Diagnostic & Pronostic holistique — technique + news + secteur + IA."""
+    groq_key = os.getenv("GROQ_API_KEY", "")
+    if not groq_key:
+        return {"error": "GROQ_API_KEY non configurée"}
+
+    # Détection de patterns graphiques
+    patterns = detect_patterns(req.candles, req.indicators)
+
+    prompt = _build_diagnostic_prompt(req, patterns)
+
+    try:
+        raw = _call_groq(groq_key, prompt)
+        result = _parse_json(raw)
+        # Enrichir avec les patterns calculés localement
+        result["patterns_detected"] = patterns
+        return result
+    except Exception as e:
+        print(f"[DIAGNOSTIC ERROR] {e}")
+        return {
+            "error": str(e),
+            "patterns_detected": patterns,
+            "diagnostic": {"etat": "NEUTRE", "force": 5, "resume": "Analyse indisponible temporairement"},
+            "pronostic": {"verdict": "CONSERVER", "risques": [], "catalyseurs": []}
+        }
 
 
 # ── Route principale ──────────────────────────────────────────────────────────

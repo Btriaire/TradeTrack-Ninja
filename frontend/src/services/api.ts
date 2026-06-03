@@ -62,3 +62,14 @@ export const getSignals = () =>
 
 export const refreshSignals = () =>
   api.post('/signals/refresh').then(r => r.data)
+
+export const analyzeDiagnostic = (payload: {
+  symbol: string
+  name: string
+  sector: string
+  index: string
+  candles: object[]
+  indicators: object
+  articles: object[]
+  with_explanation: boolean
+}) => api.post('/analysis/diagnostic', payload).then(r => r.data)

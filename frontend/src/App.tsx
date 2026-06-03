@@ -3,7 +3,7 @@ import { useQuery } from '@tanstack/react-query'
 import {
   BarChart2, Newspaper, Calculator, Sparkles,
   Activity, Menu, X, Monitor, Smartphone, RotateCcw,
-  Search, PieChart, Zap, Globe, TrendingUp, Rss,
+  Search, PieChart, Zap, Globe, TrendingUp, Rss, Stethoscope,
 } from 'lucide-react'
 import { Watchlist }      from './components/Watchlist'
 import { StockChart }     from './components/StockChart'
@@ -11,6 +11,7 @@ import { QuoteHeader }    from './components/QuoteHeader'
 import { NewsPanel }      from './components/NewsPanel'
 import { OrderSimulator } from './components/OrderSimulator'
 import { AIPanel }        from './components/AIPanel'
+import { DiagnosticPanel } from './components/DiagnosticPanel'
 import { AuthButton }     from './components/AuthButton'
 import { IndicesBar }     from './components/IndicesBar'
 import { SearchModal }    from './components/SearchModal'
@@ -34,15 +35,42 @@ const GLOBAL_VIEWS: { id: GlobalView; label: string; icon: any; desc: string }[]
   { id: 'news',    label: 'Actualités',         icon: Rss,        desc: '15 sources FR + Monde' },
 ]
 
+// ── Lookup secteur/indice par symbole ─────────────────────────────────────────
+const SYMBOL_META: Record<string, { sector: string; index: string; name: string }> = {
+  'MC.PA':  { name: 'LVMH',          sector: 'Luxe & Mode',    index: 'CAC 40'  },
+  'TTE.PA': { name: 'TotalEnergies', sector: 'Énergie',        index: 'CAC 40'  },
+  'AI.PA':  { name: 'Air Liquide',   sector: 'Chimie',         index: 'CAC 40'  },
+  'BNP.PA': { name: 'BNP Paribas',   sector: 'Finance',        index: 'CAC 40'  },
+  'SAN.PA': { name: 'Sanofi',        sector: 'Santé',          index: 'CAC 40'  },
+  'OR.PA':  { name: "L'Oréal",       sector: 'Consommation',   index: 'CAC 40'  },
+  'CS.PA':  { name: 'AXA',           sector: 'Finance',        index: 'CAC 40'  },
+  'DG.PA':  { name: 'Vinci',         sector: 'Infrastructures',index: 'CAC 40'  },
+  'DSY.PA': { name: 'Dassault Sys.', sector: 'Technologie',    index: 'CAC 40'  },
+  'CAP.PA': { name: 'Capgemini',     sector: 'Technologie',    index: 'CAC 40'  },
+  'AAPL':   { name: 'Apple',         sector: 'Technologie',    index: 'NASDAQ'  },
+  'MSFT':   { name: 'Microsoft',     sector: 'Technologie',    index: 'NASDAQ'  },
+  'GOOGL':  { name: 'Alphabet',      sector: 'Technologie',    index: 'NASDAQ'  },
+  'AMZN':   { name: 'Amazon',        sector: 'E-Commerce',     index: 'NASDAQ'  },
+  'NVDA':   { name: 'Nvidia',        sector: 'Semi-conducteurs',index: 'NASDAQ' },
+  'TSLA':   { name: 'Tesla',         sector: 'Automobile',     index: 'NASDAQ'  },
+  'META':   { name: 'Meta',          sector: 'Technologie',    index: 'NASDAQ'  },
+  'JPM':    { name: 'JPMorgan',      sector: 'Finance',        index: 'NYSE'    },
+  'JNJ':    { name: 'Johnson & J.',  sector: 'Santé',          index: 'NYSE'    },
+  'XOM':    { name: 'ExxonMobil',    sector: 'Énergie',        index: 'NYSE'    },
+  'SAP':    { name: 'SAP',           sector: 'Technologie',    index: 'DAX'     },
+  'SIE.DE': { name: 'Siemens',       sector: 'Industrie',      index: 'DAX'     },
+}
+
 // ── Onglets spécifiques à une valeur ─────────────────────────────────────────
-type StockTab = 'chart' | 'news' | 'simulator' | 'ai' | 'portfolio'
+type StockTab = 'chart' | 'news' | 'simulator' | 'ai' | 'diagnostic' | 'portfolio'
 
 const STOCK_TABS: { id: StockTab; label: string; icon: any }[] = [
-  { id: 'chart',     label: 'Graphique',  icon: BarChart2  },
-  { id: 'news',      label: 'Actualités', icon: Newspaper  },
-  { id: 'simulator', label: 'Simulateur', icon: Calculator },
-  { id: 'ai',        label: 'Analyse IA', icon: Sparkles   },
-  { id: 'portfolio', label: 'Portfolio',  icon: PieChart   },
+  { id: 'chart',      label: 'Graphique',   icon: BarChart2    },
+  { id: 'news',       label: 'Actualités',  icon: Newspaper    },
+  { id: 'simulator',  label: 'Simulateur',  icon: Calculator   },
+  { id: 'ai',         label: 'Analyse IA',  icon: Sparkles     },
+  { id: 'diagnostic', label: 'Diagnostic',  icon: Stethoscope  },
+  { id: 'portfolio',  label: 'Portfolio',   icon: PieChart     },
 ]
 
 export default function App() {
@@ -269,10 +297,21 @@ export default function App() {
                 ))}
               </div>
 
-              {activeTab === 'chart'     && <StockChart candles={candles} indicators={indicators} symbol={symbol} />}
-              {activeTab === 'news'      && <NewsPanel symbol={symbol} />}
-              {activeTab === 'simulator' && <OrderSimulator symbol={symbol} currentPrice={quote?.price} />}
-              {activeTab === 'ai'        && <AIPanel symbol={symbol} articles={articles} indicators={indicators} candles={candles} />}
+              {activeTab === 'chart'      && <StockChart candles={candles} indicators={indicators} symbol={symbol} />}
+              {activeTab === 'news'       && <NewsPanel symbol={symbol} />}
+              {activeTab === 'simulator'  && <OrderSimulator symbol={symbol} currentPrice={quote?.price} />}
+              {activeTab === 'ai'         && <AIPanel symbol={symbol} articles={articles} indicators={indicators} candles={candles} />}
+              {activeTab === 'diagnostic' && (
+                <DiagnosticPanel
+                  symbol={symbol}
+                  name={SYMBOL_META[symbol]?.name || symbol}
+                  sector={SYMBOL_META[symbol]?.sector || ''}
+                  index={SYMBOL_META[symbol]?.index || ''}
+                  candles={candles}
+                  indicators={indicators}
+                  articles={articles}
+                />
+              )}
               {activeTab === 'portfolio' && (
                 <Portfolio
                   positions={positions}
