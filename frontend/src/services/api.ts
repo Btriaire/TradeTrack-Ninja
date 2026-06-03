@@ -13,6 +13,9 @@ export const getQuote = (symbol: string): Promise<Quote> =>
 export const getLiveQuote = (symbol: string) =>
   api.get(`/stocks/live/${symbol}`).then(r => r.data)
 
+export const getIntraday = (symbol: string, interval = '5m') =>
+  api.get(`/stocks/intraday/${symbol}`, { params: { interval } }).then(r => r.data)
+
 export const getHistory = (symbol: string, period = '6mo', interval = '1d'): Promise<Candle[]> =>
   api.get(`/stocks/history/${symbol}`, { params: { period, interval } }).then(r => r.data)
 

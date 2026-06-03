@@ -5,6 +5,7 @@ import {
   Activity, Menu, X, Monitor, Smartphone, RotateCcw,
   Search, PieChart, Zap, Globe, TrendingUp, Rss, Stethoscope,
 } from 'lucide-react'
+// Activity est déjà importé ci-dessus — utilisé pour le bouton Intraday
 import { Watchlist }      from './components/Watchlist'
 import { StockChart }     from './components/StockChart'
 import { QuoteHeader }    from './components/QuoteHeader'
@@ -12,6 +13,7 @@ import { NewsPanel }      from './components/NewsPanel'
 import { OrderSimulator } from './components/OrderSimulator'
 import { AIPanel }        from './components/AIPanel'
 import { DiagnosticPanel } from './components/DiagnosticPanel'
+import { IntradayChart }   from './components/IntradayChart'
 import { AuthButton }     from './components/AuthButton'
 import { IndicesBar }     from './components/IndicesBar'
 import { GameOfDay }      from './components/GameOfDay'
@@ -77,12 +79,13 @@ const STOCK_TABS: { id: StockTab; label: string; icon: any }[] = [
 ]
 
 export default function App() {
-  const [symbol,      setSymbol]      = useState('MC.PA')
-  const [period,      setPeriod]      = useState('6mo')
-  const [activeTab,   setActiveTab]   = useState<StockTab>('chart')
-  const [globalView,  setGlobalView]  = useState<GlobalView>('stock')
-  const [sidebarOpen, setSidebarOpen] = useState(false)
-  const [searchOpen,  setSearchOpen]  = useState(false)
+  const [symbol,       setSymbol]       = useState('MC.PA')
+  const [period,       setPeriod]       = useState('6mo')
+  const [activeTab,    setActiveTab]    = useState<StockTab>('chart')
+  const [globalView,   setGlobalView]   = useState<GlobalView>('stock')
+  const [sidebarOpen,  setSidebarOpen]  = useState(false)
+  const [searchOpen,   setSearchOpen]   = useState(false)
+  const [showIntraday, setShowIntraday] = useState(false)
 
   const { user }                                         = useAuth()
   const { items: watchlistItems, addItem, removeItem }   = useWatchlist(user)
@@ -109,7 +112,7 @@ export default function App() {
     staleTime: 5 * 60 * 1000,
   })
 
-  useEffect(() => { setActiveTab('chart') }, [symbol])
+  useEffect(() => { setActiveTab('chart'); setShowIntraday(false) }, [symbol])
   useEffect(() => { if (!isMobile) setSidebarOpen(false) }, [isMobile])
 
   // Raccourci ⌘K
@@ -290,13 +293,30 @@ export default function App() {
             <>
               <QuoteHeader symbol={symbol} isMobile={isMobile} />
 
-              {/* Période */}
+              {/* Période + bouton Intraday */}
               {activeTab === 'chart' && (
-                <div className="flex gap-1 flex-wrap">
+                <div className="flex items-center gap-1 flex-wrap">
+                  {/* ⚡ Intraday */}
+                  <button
+                    onClick={() => setShowIntraday(v => !v)}
+                    className={`flex items-center gap-1.5 px-2.5 py-1 rounded-lg text-xs font-semibold transition-colors border ${
+                      showIntraday
+                        ? 'bg-cyan-500/20 text-cyan-400 border-cyan-500/40'
+                        : 'bg-dark-800 text-slate-500 hover:text-cyan-400 border-transparent'
+                    }`}
+                  >
+                    <Activity size={11} />
+                    Intraday
+                  </button>
+                  <div className="h-4 w-px bg-dark-600 mx-0.5" />
+                  {/* Périodes historiques — grises si intraday actif */}
                   {['1mo','3mo','6mo','1y','2y','5y'].map(p => (
-                    <button key={p} onClick={() => setPeriod(p)}
+                    <button key={p}
+                      onClick={() => { setPeriod(p); setShowIntraday(false) }}
                       className={`px-2.5 py-1 rounded-lg text-xs font-semibold transition-colors ${
-                        period === p ? 'bg-accent-blue text-white' : 'bg-dark-800 text-slate-500 hover:text-white'
+                        !showIntraday && period === p
+                          ? 'bg-accent-blue text-white'
+                          : 'bg-dark-800 text-slate-500 hover:text-white'
                       }`}>
                       {p.toUpperCase()}
                     </button>
@@ -320,7 +340,8 @@ export default function App() {
                 ))}
               </div>
 
-              {activeTab === 'chart'      && <StockChart candles={candles} indicators={indicators} symbol={symbol} />}
+              {activeTab === 'chart' && showIntraday && <IntradayChart symbol={symbol} />}
+              {activeTab === 'chart' && !showIntraday && <StockChart candles={candles} indicators={indicators} symbol={symbol} />}
               {activeTab === 'news'       && <NewsPanel symbol={symbol} />}
               {activeTab === 'simulator'  && <OrderSimulator symbol={symbol} currentPrice={quote?.price} />}
               {activeTab === 'ai'         && <AIPanel symbol={symbol} articles={articles} indicators={indicators} candles={candles} />}

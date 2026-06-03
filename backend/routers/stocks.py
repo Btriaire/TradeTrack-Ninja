@@ -1,6 +1,6 @@
 from fastapi import APIRouter, HTTPException
 import httpx
-from services.yahoo_finance import get_quote, get_history, get_indicators, get_live_quote
+from services.yahoo_finance import get_quote, get_history, get_indicators, get_live_quote, get_intraday
 
 router = APIRouter(prefix="/stocks", tags=["stocks"])
 
@@ -57,6 +57,12 @@ def quote(symbol: str):
 def live(symbol: str):
     """Quote pseudo-temps-réel : cache 8s, bougies 2min, marketState inclus."""
     return get_live_quote(symbol.upper())
+
+
+@router.get("/intraday/{symbol}")
+def intraday(symbol: str, interval: str = "5m"):
+    """Bougies intraday du jour (1m/5m/15m/30m) + stats séance (VWAP, H/L/Vol)."""
+    return get_intraday(symbol.upper(), interval)
 
 
 @router.get("/history/{symbol}")

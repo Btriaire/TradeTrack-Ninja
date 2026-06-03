@@ -281,3 +281,102 @@ def _signal(rsi, macd, macd_sig):
 
 def search_symbols(query: str) -> list[dict]:
     return [{"symbol": query.upper(), "name": query.upper(), "exchange": "", "type": ""}]
+
+
+# ── Intraday (bougies séance courante) ────────────────────────────────────────
+_intraday_cache: dict = {}
+
+def get_intraday(symbol: str, interval: str = "5m") -> dict:
+    """
+    Bougies intraday du jour courant avec stats de séance.
+    Cache : 60s pour 1m, 3min pour 5m, 10min pour 15m+
+    """
+    valid = {"1m", "2m", "5m", "15m", "30m", "60m"}
+    if interval not in valid:
+        interval = "5m"
+
+    ttl = 60 if interval == "1m" else 180 if interval in ("2m", "5m") else 600
+    key = f"intraday:{symbol}:{interval}"
+    entry = _intraday_cache.get(key)
+    if entry and (time.time() - entry[0]) < ttl:
+        return entry[1]
+
+    url = f"https://query1.finance.yahoo.com/v8/finance/chart/{symbol}"
+    try:
+        r = httpx.get(url, params={
+            "interval":       interval,
+            "range":          "1d",
+            "includePrePost": "true",
+        }, headers=HEADERS, timeout=12, follow_redirects=True)
+
+        data   = r.json()
+        result = data.get("chart", {}).get("result")
+        if not result:
+            return {"symbol": symbol, "candles": [], "session": {}, "market_state": "CLOSED"}
+
+        meta       = result[0].get("meta", {})
+        timestamps = result[0].get("timestamp", []) or []
+        q0         = result[0].get("indicators", {}).get("quote", [{}])[0]
+
+        opens   = q0.get("open",   [])
+        highs   = q0.get("high",   [])
+        lows    = q0.get("low",    [])
+        closes  = q0.get("close",  [])
+        volumes = q0.get("volume", [])
+
+        candles = []
+        for i, ts in enumerate(timestamps):
+            c = closes[i]  if i < len(closes)  else None
+            if c is None:
+                continue
+            o = opens[i]   if i < len(opens)   else c
+            h = highs[i]   if i < len(highs)   else c
+            l = lows[i]    if i < len(lows)    else c
+            v = volumes[i] if i < len(volumes) else 0
+            candles.append({
+                "time":   int(ts),
+                "open":   round(float(o), 4) if o else c,
+                "high":   round(float(h), 4) if h else c,
+                "low":    round(float(l), 4) if l else c,
+                "close":  round(float(c), 4),
+                "volume": int(v) if v else 0,
+            })
+
+        # ── Stats de séance ───────────────────────────────────────────────
+        session_open  = candles[0]["open"]  if candles else None
+        session_high  = max(c["high"]  for c in candles) if candles else None
+        session_low   = min(c["low"]   for c in candles) if candles else None
+        total_vol     = sum(c["volume"] for c in candles)
+        current       = _clean(meta.get("regularMarketPrice")) or (candles[-1]["close"] if candles else None)
+
+        # VWAP = Σ(typical_price × volume) / Σ(volume)
+        vwap = None
+        if total_vol > 0:
+            num = sum(((c["high"] + c["low"] + c["close"]) / 3) * c["volume"] for c in candles)
+            vwap = round(num / total_vol, 2)
+
+        delta_open = None
+        if current and session_open and session_open != 0:
+            delta_open = round((current - session_open) / session_open * 100, 2)
+
+        out = {
+            "symbol":       symbol,
+            "interval":     interval,
+            "candles":      candles,
+            "market_state": meta.get("marketState", "CLOSED"),
+            "session": {
+                "open":        round(session_open, 2)  if session_open else None,
+                "high":        round(session_high, 2)  if session_high else None,
+                "low":         round(session_low, 2)   if session_low  else None,
+                "vwap":        vwap,
+                "volume":      total_vol,
+                "current":     current,
+                "delta_open":  delta_open,
+            },
+        }
+        _intraday_cache[key] = (time.time(), out)
+        return out
+
+    except Exception as e:
+        print(f"[INTRADAY] {symbol}/{interval}: {e}")
+        return {"symbol": symbol, "candles": [], "session": {}, "market_state": "CLOSED"}
