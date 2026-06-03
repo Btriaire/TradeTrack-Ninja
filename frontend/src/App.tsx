@@ -1,15 +1,19 @@
 import { useState, useEffect } from 'react'
 import { useQuery } from '@tanstack/react-query'
-import { BarChart2, Newspaper, Calculator, Sparkles, Activity, Menu, X } from 'lucide-react'
-import { Watchlist } from './components/Watchlist'
-import { StockChart } from './components/StockChart'
-import { QuoteHeader } from './components/QuoteHeader'
-import { NewsPanel } from './components/NewsPanel'
-import { OrderSimulator } from './components/OrderSimulator'
-import { AIPanel } from './components/AIPanel'
-import { AuthButton } from './components/AuthButton'
-import { useAuth } from './hooks/useAuth'
-import { useWatchlist } from './hooks/useWatchlist'
+import {
+  BarChart2, Newspaper, Calculator, Sparkles,
+  Activity, Menu, X, Monitor, Smartphone, RotateCcw,
+} from 'lucide-react'
+import { Watchlist }       from './components/Watchlist'
+import { StockChart }      from './components/StockChart'
+import { QuoteHeader }     from './components/QuoteHeader'
+import { NewsPanel }       from './components/NewsPanel'
+import { OrderSimulator }  from './components/OrderSimulator'
+import { AIPanel }         from './components/AIPanel'
+import { AuthButton }      from './components/AuthButton'
+import { useAuth }         from './hooks/useAuth'
+import { useWatchlist }    from './hooks/useWatchlist'
+import { useLayout }       from './hooks/useLayout'
 import { getHistory, getIndicators, getQuote, getNews } from './services/api'
 
 type Tab = 'chart' | 'news' | 'simulator' | 'ai'
@@ -22,105 +26,157 @@ const TABS: { id: Tab; label: string; icon: any }[] = [
 ]
 
 export default function App() {
-  const [symbol, setSymbol] = useState('MC.PA')
-  const [period, setPeriod] = useState('6mo')
-  const [activeTab, setActiveTab] = useState<Tab>('chart')
+  const [symbol, setSymbol]         = useState('MC.PA')
+  const [period, setPeriod]         = useState('6mo')
+  const [activeTab, setActiveTab]   = useState<Tab>('chart')
   const [sidebarOpen, setSidebarOpen] = useState(false)
-  const { user } = useAuth()
-  const { items: watchlistItems, addItem, removeItem } = useWatchlist(user)
 
+  const { user }                          = useAuth()
+  const { items: watchlistItems, addItem, removeItem } = useWatchlist(user)
+  const { isMobile, mode, setLayout }     = useLayout()
+
+  // ── Données ──────────────────────────────────────────────────────────────
   const { data: quote } = useQuery({
     queryKey: ['quote', symbol],
-    queryFn: () => getQuote(symbol),
+    queryFn:  () => getQuote(symbol),
     refetchInterval: 30000,
   })
-
   const { data: candles = [] } = useQuery({
     queryKey: ['history', symbol, period],
-    queryFn: () => getHistory(symbol, period),
+    queryFn:  () => getHistory(symbol, period),
   })
-
   const { data: indicators } = useQuery({
     queryKey: ['indicators', symbol],
-    queryFn: () => getIndicators(symbol),
+    queryFn:  () => getIndicators(symbol),
     refetchInterval: 60000,
   })
-
   const { data: articles = [] } = useQuery({
     queryKey: ['news', symbol],
-    queryFn: () => getNews(symbol),
+    queryFn:  () => getNews(symbol),
     staleTime: 5 * 60 * 1000,
   })
 
-  // reset tab to chart on symbol change
   useEffect(() => { setActiveTab('chart') }, [symbol])
 
-  // close sidebar on scroll/tap outside on mobile
+  // Ferme le drawer quand on bascule vers desktop
+  useEffect(() => { if (!isMobile) setSidebarOpen(false) }, [isMobile])
+
   const handleSelectSymbol = (s: string) => {
     setSymbol(s)
-    setSidebarOpen(false)
+    if (isMobile) setSidebarOpen(false)
   }
 
+  // ── Toggle layout ─────────────────────────────────────────────────────────
+  function LayoutToggle() {
+    return (
+      <div className="flex items-center gap-1 bg-dark-800 rounded-lg p-0.5">
+        <button
+          title="Mobile"
+          onClick={() => setLayout('mobile')}
+          className={`p-1.5 rounded-md transition-colors ${
+            mode === 'mobile' ? 'bg-accent-blue text-white' : 'text-slate-500 hover:text-white'
+          }`}
+        >
+          <Smartphone size={13} />
+        </button>
+        <button
+          title="Auto (détection écran)"
+          onClick={() => setLayout('auto')}
+          className={`p-1.5 rounded-md transition-colors ${
+            mode === 'auto' ? 'bg-dark-600 text-white' : 'text-slate-500 hover:text-white'
+          }`}
+        >
+          <RotateCcw size={13} />
+        </button>
+        <button
+          title="Bureau"
+          onClick={() => setLayout('desktop')}
+          className={`p-1.5 rounded-md transition-colors ${
+            mode === 'desktop' ? 'bg-accent-blue text-white' : 'text-slate-500 hover:text-white'
+          }`}
+        >
+          <Monitor size={13} />
+        </button>
+      </div>
+    )
+  }
+
+  // ── Rendu ─────────────────────────────────────────────────────────────────
   return (
     <div className="min-h-screen bg-dark-900 flex flex-col">
 
-      {/* ── Top bar ────────────────────────────────────── */}
-      <header className="border-b border-dark-700 px-4 md:px-6 py-3 flex items-center justify-between shrink-0">
-        {/* Left: hamburger (mobile) + logo */}
-        <div className="flex items-center gap-3">
-          <button
-            onClick={() => setSidebarOpen(o => !o)}
-            className="md:hidden text-slate-400 hover:text-white transition-colors p-1"
-            aria-label="Ouvrir la watchlist"
-          >
-            <Menu size={20} />
-          </button>
-          <div className="flex items-center gap-2">
-            <Activity size={18} className="text-accent-blue" />
-            <span className="font-bold text-white text-base md:text-lg tracking-tight">TradeTrack-Ninja</span>
-            <span className="hidden sm:inline text-xs text-slate-600 ml-1">LCL Bourse</span>
-          </div>
+      {/* ── Header ──────────────────────────────────────────────────── */}
+      <header className="border-b border-dark-700 px-4 py-3 flex items-center justify-between shrink-0 gap-2">
+        <div className="flex items-center gap-2 min-w-0">
+          {/* Hamburger — mobile seulement */}
+          {isMobile && (
+            <button
+              onClick={() => setSidebarOpen(o => !o)}
+              className="text-slate-400 hover:text-white transition-colors p-1 shrink-0"
+              aria-label="Watchlist"
+            >
+              <Menu size={20} />
+            </button>
+          )}
+          <Activity size={18} className="text-accent-blue shrink-0" />
+          <span className="font-bold text-white text-base tracking-tight truncate">
+            TradeTrack-Ninja
+          </span>
+          {!isMobile && (
+            <span className="text-xs text-slate-600 ml-1 shrink-0">LCL Bourse</span>
+          )}
         </div>
 
-        {/* Right: status dot + auth */}
-        <div className="flex items-center gap-3">
-          <div className="hidden sm:flex items-center gap-2 text-xs text-slate-500">
-            <span className="h-2 w-2 rounded-full bg-green-500 animate-pulse" />
-            Alpha Vantage · RSS
-          </div>
+        <div className="flex items-center gap-2 shrink-0">
+          {/* Pastille live — bureau seulement */}
+          {!isMobile && (
+            <div className="flex items-center gap-1.5 text-xs text-slate-500">
+              <span className="h-2 w-2 rounded-full bg-green-500 animate-pulse" />
+              Live
+            </div>
+          )}
+          <LayoutToggle />
           <AuthButton />
         </div>
       </header>
 
+      {/* ── Body ────────────────────────────────────────────────────── */}
       <div className="flex flex-1 overflow-hidden relative">
 
-        {/* ── Mobile backdrop ───────────────────────────── */}
-        {sidebarOpen && (
+        {/* Backdrop mobile */}
+        {isMobile && sidebarOpen && (
           <div
-            className="fixed inset-0 z-30 bg-black/60 md:hidden"
+            className="fixed inset-0 z-30 bg-black/60"
             onClick={() => setSidebarOpen(false)}
           />
         )}
 
-        {/* ── Sidebar / Watchlist drawer ────────────────── */}
-        <aside className={`
-          fixed md:relative inset-y-0 left-0 z-40
-          w-72 md:w-64 shrink-0
-          border-r border-dark-700
-          bg-dark-900 overflow-y-auto p-3
-          transition-transform duration-300 ease-in-out
-          ${sidebarOpen ? 'translate-x-0' : '-translate-x-full md:translate-x-0'}
-        `}>
-          {/* Close button (mobile only) */}
-          <div className="flex items-center justify-between mb-2 md:hidden">
-            <span className="text-xs font-semibold text-slate-500 uppercase tracking-wider">Watchlist</span>
-            <button
-              onClick={() => setSidebarOpen(false)}
-              className="text-slate-500 hover:text-white transition-colors p-1"
-            >
-              <X size={16} />
-            </button>
-          </div>
+        {/* ── Sidebar ─────────────────────────────────────────────── */}
+        <aside className={[
+          'bg-dark-900 border-r border-dark-700 overflow-y-auto p-3 shrink-0',
+          isMobile
+            // Mobile : drawer fixe avec transition slide
+            ? `fixed inset-y-0 left-0 z-40 w-72 transition-transform duration-300 ${
+                sidebarOpen ? 'translate-x-0' : '-translate-x-full'
+              }`
+            // Desktop : sidebar fixe dans le flux
+            : 'relative w-64',
+        ].join(' ')}>
+
+          {/* Bouton fermer — mobile */}
+          {isMobile && (
+            <div className="flex items-center justify-between mb-2">
+              <span className="text-xs font-semibold text-slate-500 uppercase tracking-wider">
+                Watchlist
+              </span>
+              <button
+                onClick={() => setSidebarOpen(false)}
+                className="text-slate-500 hover:text-white transition-colors p-1"
+              >
+                <X size={15} />
+              </button>
+            </div>
+          )}
 
           <Watchlist
             selected={symbol}
@@ -131,13 +187,12 @@ export default function App() {
           />
         </aside>
 
-        {/* ── Main content ──────────────────────────────── */}
-        <main className="flex-1 overflow-y-auto p-3 md:p-4 space-y-3 min-w-0">
+        {/* ── Contenu principal ───────────────────────────────────── */}
+        <main className={`flex-1 overflow-y-auto space-y-3 min-w-0 ${isMobile ? 'p-3' : 'p-4'}`}>
 
-          {/* Quote header */}
-          <QuoteHeader symbol={symbol} />
+          <QuoteHeader symbol={symbol} isMobile={isMobile} />
 
-          {/* Period selector — chart tab only */}
+          {/* Sélecteur de période */}
           {activeTab === 'chart' && (
             <div className="flex gap-1 flex-wrap">
               {['1mo','3mo','6mo','1y','2y','5y'].map(p => (
@@ -156,45 +211,37 @@ export default function App() {
             </div>
           )}
 
-          {/* Tab navigation */}
+          {/* Onglets */}
           <div className="flex gap-1 bg-dark-800 rounded-xl p-1">
             {TABS.map(({ id, label, icon: Icon }) => (
               <button
                 key={id}
                 onClick={() => setActiveTab(id)}
-                className={`flex-1 flex items-center justify-center gap-1 md:gap-1.5 py-2 rounded-lg text-xs font-semibold transition-colors ${
-                  activeTab === id
-                    ? 'bg-dark-600 text-white'
-                    : 'text-slate-500 hover:text-slate-300'
+                className={`flex-1 flex items-center justify-center gap-1.5 py-2 rounded-lg text-xs font-semibold transition-colors ${
+                  activeTab === id ? 'bg-dark-600 text-white' : 'text-slate-500 hover:text-slate-300'
                 }`}
               >
                 <Icon size={13} />
-                {/* Label: hidden on very small screens */}
-                <span className="hidden sm:inline">{label}</span>
+                {/* Label masqué sur mobile */}
+                {!isMobile && <span>{label}</span>}
               </button>
             ))}
           </div>
 
-          {/* Tab content */}
-          {activeTab === 'chart' && (
-            <StockChart candles={candles} indicators={indicators} symbol={symbol} />
-          )}
-          {activeTab === 'news' && (
-            <NewsPanel symbol={symbol} />
-          )}
-          {activeTab === 'simulator' && (
-            <OrderSimulator symbol={symbol} currentPrice={quote?.price} />
-          )}
-          {activeTab === 'ai' && (
-            <AIPanel symbol={symbol} articles={articles} indicators={indicators} />
-          )}
+          {/* Contenu onglet */}
+          {activeTab === 'chart'     && <StockChart candles={candles} indicators={indicators} symbol={symbol} />}
+          {activeTab === 'news'      && <NewsPanel symbol={symbol} />}
+          {activeTab === 'simulator' && <OrderSimulator symbol={symbol} currentPrice={quote?.price} />}
+          {activeTab === 'ai'        && <AIPanel symbol={symbol} articles={articles} indicators={indicators} />}
         </main>
       </div>
 
-      {/* ── Footer ────────────────────────────────────── */}
-      <footer className="border-t border-dark-700 px-4 md:px-6 py-2 text-xs text-slate-700 flex flex-col sm:flex-row sm:justify-between gap-1">
+      {/* ── Footer ──────────────────────────────────────────────────── */}
+      <footer className={`border-t border-dark-700 px-4 py-2 text-xs text-slate-700 ${
+        isMobile ? 'text-center' : 'flex justify-between'
+      }`}>
         <span>⚠️ Usage informatif — pas un conseil en investissement.</span>
-        <span className="hidden sm:block">Frais simulés selon grille LCL Bourse 2024</span>
+        {!isMobile && <span>Frais simulés selon grille LCL Bourse 2024</span>}
       </footer>
     </div>
   )
