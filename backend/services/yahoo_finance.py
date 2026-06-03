@@ -115,42 +115,48 @@ def get_history(symbol: str, period: str = "6mo", interval: str = "1d") -> list[
 
 
 # ── Quote temps réel ─────────────────────────────────────────────────────────
+# Utilise le endpoint /chart (même que l'historique) car /quote est bloqué
+# sur les IPs cloud. Le meta de la réponse contient le prix en temps réel.
 def get_quote(symbol: str) -> dict:
     cache_key = f"quote:{symbol}"
     cached = _cached(cache_key)
     if cached is not None:
         return cached
 
-    url = "https://query1.finance.yahoo.com/v8/finance/quote"
+    url = f"https://query1.finance.yahoo.com/v8/finance/chart/{symbol}"
     try:
         r = httpx.get(url, params={
-            "symbols": symbol,
-            "fields":  "regularMarketPrice,regularMarketChange,"
-                       "regularMarketChangePercent,regularMarketPreviousClose,"
-                       "regularMarketVolume,marketCap,currency",
-        }, headers=HEADERS, timeout=10, follow_redirects=True)
+            "interval":       "1d",
+            "range":          "5d",
+            "includePrePost": "false",
+        }, headers=HEADERS, timeout=12, follow_redirects=True)
 
         data   = r.json()
-        result = data.get("quoteResponse", {}).get("result", [])
+        result = data.get("chart", {}).get("result")
         if not result:
-            return {"symbol": symbol, "price": None, "error": "Aucune donnée"}
+            err = data.get("chart", {}).get("error", {})
+            print(f"[YF QUOTE] {symbol} pas de résultat: {err}")
+            return {"symbol": symbol, "price": None}
 
-        q      = result[0]
-        price  = _clean(q.get("regularMarketPrice"))
-        prev   = _clean(q.get("regularMarketPreviousClose"))
-        change = _clean(q.get("regularMarketChange"))
-        pct    = _clean(q.get("regularMarketChangePercent"))
-        mcap   = q.get("marketCap")
+        meta  = result[0].get("meta", {})
+        price = _clean(meta.get("regularMarketPrice"))
+        prev  = _clean(meta.get("chartPreviousClose") or meta.get("previousClose"))
+        vol   = meta.get("regularMarketVolume")
+
+        change, pct = None, None
+        if price and prev and prev != 0:
+            change = round(price - prev, 2)
+            pct    = round((price - prev) / prev * 100, 2)
 
         result_dict = {
             "symbol":     symbol,
             "price":      price,
             "prev_close": prev,
             "change":     change,
-            "change_pct": round(pct, 2) if pct is not None else None,
-            "volume":     q.get("regularMarketVolume"),
-            "market_cap": mcap,
-            "currency":   q.get("currency", "EUR"),
+            "change_pct": pct,
+            "volume":     vol,
+            "market_cap": None,
+            "currency":   meta.get("currency", "EUR"),
         }
         return _store(cache_key, result_dict)
 

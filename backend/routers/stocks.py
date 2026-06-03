@@ -129,62 +129,31 @@ def search(q: str, market: str = "ALL"):
 
 
 @router.get("/markets")
-async def get_markets():
-    """Retourne toutes les valeurs de l'univers avec leurs cotations en temps réel.
-    Utilise le même pattern que /indices (async httpx, batch, pas de cache)."""
+def get_markets():
+    """Retourne toutes les valeurs de l'univers avec leurs cotations.
+    Utilise get_quote (basé sur /chart, prouvé fonctionnel sur Render)."""
     from services.signal_engine import UNIVERSE
-    import asyncio
+    from services.yahoo_finance import get_quote
+    from concurrent.futures import ThreadPoolExecutor
 
-    symbols = [s["symbol"] for s in UNIVERSE]
-
-    async def fetch_batch(syms: list) -> list:
-        """Interroge Yahoo Finance pour un groupe de symboles en un seul appel."""
-        try:
-            async with httpx.AsyncClient(headers=HEADERS, timeout=15) as client:
-                r = await client.get(
-                    "https://query1.finance.yahoo.com/v8/finance/quote",
-                    params={"symbols": ",".join(syms)},
-                )
-            return r.json().get("quoteResponse", {}).get("result", [])
-        except Exception as e:
-            print(f"[MARKETS] erreur batch {syms[:3]}: {e}")
-            # Fallback : essai individuel
-            results = []
-            for sym in syms:
-                try:
-                    async with httpx.AsyncClient(headers=HEADERS, timeout=8) as c:
-                        r = await c.get(
-                            "https://query1.finance.yahoo.com/v8/finance/quote",
-                            params={"symbols": sym},
-                        )
-                    q = r.json().get("quoteResponse", {}).get("result", [])
-                    if q: results.extend(q)
-                except Exception as e2:
-                    print(f"[MARKETS] erreur {sym}: {e2}")
-            return results
-
-    # 2 batches de ~20 symboles
-    mid      = len(symbols) // 2
-    batch1, batch2 = symbols[:mid], symbols[mid:]
-    r1, r2   = await asyncio.gather(fetch_batch(batch1), fetch_batch(batch2))
-    all_q    = r1 + r2
-    qmap     = {q["symbol"]: q for q in all_q}
-
-    print(f"[MARKETS] {len(qmap)}/{len(symbols)} cotations récupérées")
-
-    enriched = []
-    for stock in UNIVERSE:
-        q = qmap.get(stock["symbol"], {})
-        enriched.append({
+    def fetch_one(stock: dict) -> dict:
+        q = get_quote(stock["symbol"])
+        return {
             **stock,
-            "price":      round(q.get("regularMarketPrice",         0) or 0, 2),
-            "change_pct": round(q.get("regularMarketChangePercent", 0) or 0, 2),
-            "volume":     q.get("regularMarketVolume", 0) or 0,
-            "market_cap": q.get("marketCap",           0) or 0,
-            "day_high":   round(q.get("regularMarketDayHigh", 0) or 0, 2),
-            "day_low":    round(q.get("regularMarketDayLow",  0) or 0, 2),
-        })
-    return enriched
+            "price":      q.get("price")      or 0,
+            "change_pct": q.get("change_pct") or 0,
+            "volume":     q.get("volume")     or 0,
+            "market_cap": 0,
+            "day_high":   0,
+            "day_low":    0,
+        }
+
+    with ThreadPoolExecutor(max_workers=10) as ex:
+        results = list(ex.map(fetch_one, UNIVERSE))
+
+    filled = sum(1 for r in results if r["price"] > 0)
+    print(f"[MARKETS] {filled}/{len(UNIVERSE)} cotations récupérées")
+    return results
 
 
 @router.get("/indices")
