@@ -3,7 +3,7 @@ Router /signals — signaux quotidiens Great Catch / Stay Away
 """
 from fastapi import APIRouter, BackgroundTasks
 from datetime import datetime
-import os, json, time, httpx
+import os, json, time, httpx, asyncio, feedparser
 from services.signal_engine import get_signals_cached, compute_signals, _cache, UNIVERSE
 
 router = APIRouter(prefix="/signals", tags=["signals"])
@@ -278,3 +278,161 @@ Réponds avec UNE seule phrase, sans guillemets, directement en français."""
 def get_universe():
     """Retourne la liste des valeurs analysées."""
     return UNIVERSE
+
+
+# ── Géopolitique ──────────────────────────────────────────────────────────────
+_geo_cache: dict = {"ts": 0, "data": None}
+GEO_TTL = 4 * 3600   # 4 heures
+
+# Sources géopolitiques / macro prioritaires
+_GEO_SOURCES = [
+    "https://feeds.reuters.com/reuters/businessNews",
+    "https://www.cnbc.com/id/100003114/device/rss/rss.html",
+    "https://feeds.content.dowjones.io/public/rss/mw_topstories",
+    "https://feeds.a.dj.com/rss/RSSMarketsMain.xml",
+    "https://www.theguardian.com/uk/business/rss",
+    "https://www.lefigaro.fr/rss/figaro_economie.xml",
+]
+
+_GEO_KEYWORDS = (
+    "tariff","sanction","war","conflict","election","central bank","fed","ecb","bce",
+    "trade","treaty","nato","g7","g20","opec","geopolit","tension","ukraine","russia",
+    "china","dollar","euro","inflation","rate","interest","policy","xi","trump","biden",
+    "macron","merz","embargo","import","export","supply chain","energy","oil","gas",
+    "tarifaire","guerre","élection","banque centrale","taux","géopolit","pétrole",
+)
+
+
+async def _fetch_geo_headlines() -> list[str]:
+    """Récupère des titres d'actualité récents depuis des sources fiables."""
+    headers = {
+        "User-Agent": "Mozilla/5.0 (compatible; TradeTrack/1.0)",
+        "Accept":     "application/rss+xml, application/xml, text/xml, */*",
+    }
+    headlines = []
+
+    async def _fetch_one(url: str):
+        try:
+            async with httpx.AsyncClient(timeout=8) as client:
+                r = await client.get(url, headers=headers, follow_redirects=True)
+                if r.status_code == 200:
+                    feed = feedparser.parse(r.text)
+                    for entry in feed.entries[:6]:
+                        title = getattr(entry, "title", "")
+                        summary = getattr(entry, "summary", "")[:120]
+                        if title:
+                            headlines.append(f"{title}. {summary}".strip())
+        except Exception:
+            pass
+
+    await asyncio.gather(*[_fetch_one(url) for url in _GEO_SOURCES])
+
+    # Filtrer : garder surtout les titres à saveur géopolitique/macro
+    filtered = [h for h in headlines if any(kw in h.lower() for kw in _GEO_KEYWORDS)]
+    # Si pas assez filtrés, on garde tout
+    return (filtered if len(filtered) >= 6 else headlines)[:30]
+
+
+def _analyze_geo_with_groq(headlines: list[str], groq_key: str) -> dict:
+    """Appelle Groq pour identifier les 3 événements géopolitiques clés."""
+    news_block = "\n".join(f"- {h}" for h in headlines[:25])
+
+    prompt = f"""Tu es analyste géopolitique expert en marchés financiers.
+
+Voici des titres d'actualité récents:
+{news_block}
+
+Identifie les 3 décisions ou événements géopolitiques/macro les plus importants qui influencent actuellement les marchés boursiers mondiaux.
+Si les titres fournis manquent de substance géopolitique, utilise tes connaissances des tendances actuelles (tensions commerciales, politiques monétaires, conflits).
+
+Pour chaque événement retourne:
+- title: titre court et percutant (max 8 mots)
+- flags: tableau d'emojis drapeaux des pays impliqués (max 3)
+- regions: description courte des zones (ex: "USA · Chine", "Zone Euro", "Moyen-Orient")
+- impact: "HAUSSIER" | "BAISSIER" | "MIXTE" | "INCERTAIN"
+- sectors: tableau de 2-3 secteurs affectés (ex: ["Technologie", "Énergie"])
+- brief: explication concise (25-35 mots max) en français
+- signal: "OPPORTUNITÉ" | "RISQUE" | "SURVEILLER"
+
+Réponds UNIQUEMENT en JSON valide (sans markdown):
+{{
+  "events": [
+    {{
+      "title": "...",
+      "flags": ["🇺🇸","🇨🇳"],
+      "regions": "USA · Chine",
+      "impact": "BAISSIER",
+      "sectors": ["Technologie","Commerce"],
+      "brief": "...",
+      "signal": "RISQUE"
+    }}
+  ],
+  "synthesis": "une phrase de synthèse sur le climat géopolitique global (20 mots max)"
+}}"""
+
+    try:
+        r = httpx.post(
+            "https://api.groq.com/openai/v1/chat/completions",
+            headers={"Authorization": f"Bearer {groq_key}", "Content-Type": "application/json"},
+            json={
+                "model":       "llama-3.1-8b-instant",
+                "messages":    [{"role": "user", "content": prompt}],
+                "temperature": 0.4,
+                "max_tokens":  700,
+            },
+            timeout=25,
+        )
+        text = r.json()["choices"][0]["message"]["content"]
+        start, end = text.find("{"), text.rfind("}") + 1
+        if start == -1:
+            raise ValueError("Pas de JSON")
+        return json.loads(text[start:end])
+    except Exception as e:
+        print(f"[GEO GROQ] {e}")
+        return {}
+
+
+@router.get("/geo-events")
+async def geo_events():
+    """
+    Top 3 événements géopolitiques influençant les marchés.
+    - Fetch RSS international → headlines filtrés
+    - Analyse Groq → structure JSON
+    - Cache 4h
+    """
+    now = time.time()
+    if _geo_cache["data"] and (now - _geo_cache["ts"]) < GEO_TTL:
+        return _geo_cache["data"]
+
+    groq_key = os.getenv("GROQ_API_KEY", "")
+
+    # Fetch headlines (async)
+    headlines = await _fetch_geo_headlines()
+
+    result: dict = {}
+    if groq_key:
+        result = _analyze_geo_with_groq(headlines, groq_key)
+
+    # Fallback si Groq KO ou pas de clé
+    if not result.get("events"):
+        result = {
+            "events": [
+                {
+                    "title":   "Analyse indisponible",
+                    "flags":   ["🌍"],
+                    "regions": "Global",
+                    "impact":  "INCERTAIN",
+                    "sectors": ["Tous secteurs"],
+                    "brief":   "Configurez GROQ_API_KEY pour activer l'analyse géopolitique.",
+                    "signal":  "SURVEILLER",
+                },
+            ],
+            "synthesis": "Analyse géopolitique indisponible — GROQ_API_KEY requise.",
+        }
+
+    result["date"]     = datetime.now().strftime("%d/%m/%Y")
+    result["headline_count"] = len(headlines)
+
+    _geo_cache["data"] = result
+    _geo_cache["ts"]   = now
+    return result

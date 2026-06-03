@@ -66,6 +66,9 @@ export const getGameOfDay = () =>
 export const getTopSectors = () =>
   api.get('/signals/top-sectors').then(r => r.data)
 
+export const getGeoEvents = () =>
+  api.get('/signals/geo-events').then(r => r.data)
+
 export const refreshSignals = () =>
   api.post('/signals/refresh').then(r => r.data)
 
