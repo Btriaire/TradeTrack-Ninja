@@ -1,6 +1,6 @@
 """
 RSS scraper — fetch parallèle + cache 5 min
-Toutes les sources sont récupérées simultanément pour éviter les timeouts.
+Sources fiables qui n'bloquent pas les IPs cloud.
 """
 import feedparser
 import httpx
@@ -9,17 +9,20 @@ import time
 from datetime import datetime
 from typing import Optional
 
+# Sources principales — testées sur serveurs cloud
 SOURCES = {
+    "Investing.com":   "https://www.investing.com/rss/news_301.rss",
+    "MarketWatch":     "https://feeds.content.dowjones.io/public/rss/mw_realtimeheadlines",
+    "Yahoo Finance":   "https://finance.yahoo.com/rss/topstories",
+    "Seeking Alpha":   "https://seekingalpha.com/market_currents.xml",
+}
+
+# Sources françaises (bloquent parfois les IPs cloud — tentées en 2nd)
+SOURCES_FR = {
     "Boursorama":      "https://www.boursorama.com/rss/actus-societes",
     "Figaro Economie": "https://www.lefigaro.fr/rss/figaro_economie.xml",
     "Zonebourse":      "https://www.zonebourse.com/rss/news.xml",
-    "Les Echos":       "https://www.lesechos.fr/rss/rss_finance.xml",
-}
-
-# Sources de secours si les principales échouent
-FALLBACK_SOURCES = {
-    "Reuters Finance": "https://feeds.reuters.com/reuters/businessNews",
-    "Yahoo Finance":   "https://finance.yahoo.com/rss/topstories",
+    "BFM Business":    "https://www.bfmtv.com/rss/economie/",
 }
 
 HEADERS = {
@@ -28,7 +31,7 @@ HEADERS = {
         "AppleWebKit/537.36 (KHTML, like Gecko) "
         "Chrome/120.0.0.0 Safari/537.36"
     ),
-    "Accept": "application/rss+xml, application/xml, text/xml, */*",
+    "Accept":          "application/rss+xml, application/xml, text/xml, */*",
     "Accept-Language": "fr-FR,fr;q=0.9,en;q=0.8",
 }
 
@@ -66,13 +69,13 @@ async def _fetch_source_async(
     url: str,
 ) -> list[dict]:
     try:
-        resp = await client.get(url, timeout=6)
+        resp = await client.get(url, timeout=7)
         if resp.status_code >= 400:
             print(f"[RSS] {name} → HTTP {resp.status_code}")
             return []
         feed = feedparser.parse(resp.text)
         articles = []
-        for entry in feed.entries[:15]:
+        for entry in feed.entries[:12]:
             title   = entry.get("title", "").strip()
             summary = entry.get("summary", entry.get("description", "")).strip()
             link    = entry.get("link", "")
@@ -88,59 +91,50 @@ async def _fetch_source_async(
         print(f"[RSS] {name} → {len(articles)} articles")
         return articles
     except Exception as e:
-        print(f"[RSS ERROR] {name}: {e}")
+        print(f"[RSS ERROR] {name}: {type(e).__name__}")
         return []
 
 
 async def _fetch_all_async(sources: dict) -> list[dict]:
     async with httpx.AsyncClient(headers=HEADERS, follow_redirects=True) as client:
-        tasks = [
+        results = await asyncio.gather(*[
             _fetch_source_async(client, name, url)
             for name, url in sources.items()
-        ]
-        results = await asyncio.gather(*tasks)
-
-    all_articles = [a for source_list in results for a in source_list]
+        ])
+    all_articles = [a for lst in results for a in lst]
     all_articles.sort(key=lambda x: x["date"], reverse=True)
     return all_articles
 
 
 def fetch_all_news(symbol_filter: Optional[str] = None) -> list[dict]:
-    # Pas de cache si on filtre par symbole
     if not symbol_filter:
         cached = _cached()
         if cached is not None:
             print(f"[RSS] Cache hit — {len(cached)} articles")
             return cached
 
-    # Fetch parallèle sources principales
+    # Fetch parallèle sources principales (internationales, fiables)
     try:
         articles = asyncio.run(_fetch_all_async(SOURCES))
     except RuntimeError:
-        # asyncio.run() ne fonctionne pas dans une boucle déjà active
         loop = asyncio.new_event_loop()
         articles = loop.run_until_complete(_fetch_all_async(SOURCES))
         loop.close()
 
-    # Si moins de 3 articles, tenter les sources de secours
-    if len(articles) < 3:
-        print("[RSS] Sources principales insuffisantes — tentative fallback")
+    # Si insuffisant, tenter aussi les sources françaises
+    if len(articles) < 5:
+        print("[RSS] Tentative sources françaises...")
         try:
-            fallback = asyncio.run(_fetch_all_async(FALLBACK_SOURCES))
+            fr = asyncio.run(_fetch_all_async(SOURCES_FR))
         except RuntimeError:
             loop = asyncio.new_event_loop()
-            fallback = loop.run_until_complete(_fetch_all_async(FALLBACK_SOURCES))
+            fr = loop.run_until_complete(_fetch_all_async(SOURCES_FR))
             loop.close()
-        articles = (articles + fallback)
-        articles.sort(key=lambda x: x["date"], reverse=True)
+        articles = sorted(articles + fr, key=lambda x: x["date"], reverse=True)
 
-    # Filtrer par symbole si demandé (ex: "MC.PA" → cherche "LVMH" etc.)
     if symbol_filter:
-        ticker = symbol_filter.split(".")[0].lower()
-        filtered = [
-            a for a in articles
-            if ticker in (a["title"] + a["summary"]).lower()
-        ]
-        return filtered if filtered else articles  # fallback: toutes les actus
+        ticker   = symbol_filter.split(".")[0].lower()
+        filtered = [a for a in articles if ticker in (a["title"] + a["summary"]).lower()]
+        return filtered if filtered else articles
 
     return _store(articles)

@@ -50,6 +50,22 @@ def debug_env():
         "alpha_vantage_preview": av[:8] + "..." if av else "VIDE",
     }
 
+@app.get("/debug/news")
+async def debug_news():
+    """Teste chaque source RSS individuellement pour voir laquelle répond."""
+    import httpx, asyncio
+    from services.rss_scraper import SOURCES, SOURCES_FR, HEADERS
+    results = {}
+    async with httpx.AsyncClient(headers=HEADERS, follow_redirects=True) as client:
+        for name, url in {**SOURCES, **SOURCES_FR}.items():
+            try:
+                r = await client.get(url, timeout=6)
+                results[name] = {"status": r.status_code, "size": len(r.text)}
+            except Exception as e:
+                results[name] = {"status": "ERROR", "error": type(e).__name__}
+    return results
+
+
 @app.get("/debug/av/{symbol}")
 def debug_alphavantage(symbol: str):
     import os, httpx

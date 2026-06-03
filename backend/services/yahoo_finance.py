@@ -1,13 +1,12 @@
 """
-Service données financières — Alpha Vantage
-- Gratuit : 25 req/jour, 5 req/min
-- Supporte Euronext Paris (MC.PAR, AIR.PAR...)
-- Cache mémoire 30 min pour économiser les appels
+Service données financières — Yahoo Finance API directe (sans librairie yfinance)
+- Pas de quota quotidien (contrairement à Alpha Vantage 25/jour)
+- Cache mémoire 30 min pour limiter les appels
+- Supporte tous les marchés : .PA, .DE, .L, .AS, US...
 """
-import os, httpx, math, time, pandas as pd
-from datetime import datetime, timedelta
+import httpx, math, time, pandas as pd
+from datetime import datetime
 from typing import Optional
-from functools import lru_cache
 
 try:
     import ta
@@ -15,26 +14,37 @@ try:
 except Exception:
     TA_AVAILABLE = False
 
-AV_BASE = "https://www.alphavantage.co/query"
-
-# Cache simple : {cache_key: (timestamp, data)}
+# ── Cache ────────────────────────────────────────────────────────────────────
 _cache: dict = {}
 CACHE_TTL = 1800  # 30 minutes
 
-# Conversion Yahoo Finance → Alpha Vantage suffixes
-SUFFIX_MAP = {
-    ".PA": ".PAR",   # Euronext Paris
-    ".AS": ".AMS",   # Amsterdam
-    ".BR": ".BRU",   # Bruxelles
-    ".DE": ".DEX",   # Xetra Frankfurt
-    ".L":  ".LON",   # London
-    ".MI": ".MIL",   # Milan
-    ".MC": ".MAD",   # Madrid
+def _cached(key: str):
+    entry = _cache.get(key)
+    if entry and (time.time() - entry[0]) < CACHE_TTL:
+        return entry[1]
+    return None
+
+def _store(key: str, data):
+    _cache[key] = (time.time(), data)
+    return data
+
+# ── Headers qui ressemblent à un vrai navigateur ─────────────────────────────
+HEADERS = {
+    "User-Agent": (
+        "Mozilla/5.0 (Windows NT 10.0; Win64; x64) "
+        "AppleWebKit/537.36 (KHTML, like Gecko) "
+        "Chrome/120.0.0.0 Safari/537.36"
+    ),
+    "Accept": "*/*",
+    "Accept-Language": "fr-FR,fr;q=0.9,en;q=0.8",
+    "Accept-Encoding": "gzip, deflate, br",
+    "Origin": "https://finance.yahoo.com",
+    "Referer": "https://finance.yahoo.com/",
 }
 
-PERIOD_DAYS = {
-    "1mo": 30, "3mo": 90, "6mo": 180,
-    "1y": 365, "2y": 730, "5y": 1825
+PERIOD_TO_RANGE = {
+    "1mo": "1mo", "3mo": "3mo", "6mo": "6mo",
+    "1y":  "1y",  "2y":  "2y",  "5y":  "5y",
 }
 
 
@@ -46,122 +56,110 @@ def _clean(val) -> Optional[float]:
         return None
 
 
-def _av_symbol(symbol: str) -> str:
-    """MC.PA → MC.PAR"""
-    s = symbol.upper()
-    for yf_sfx, av_sfx in SUFFIX_MAP.items():
-        if s.endswith(yf_sfx):
-            return s[:-len(yf_sfx)] + av_sfx
-    return s  # US stocks unchanged
-
-
-def _key() -> str:
-    return os.getenv("ALPHA_VANTAGE_KEY", "")
-
-
-def _cached(key: str):
-    entry = _cache.get(key)
-    if entry and (time.time() - entry[0]) < CACHE_TTL:
-        return entry[1]
-    return None
-
-
-def _store(key: str, data):
-    _cache[key] = (time.time(), data)
-    return data
-
-
+# ── Historique (bougies OHLCV) ───────────────────────────────────────────────
 def get_history(symbol: str, period: str = "6mo", interval: str = "1d") -> list[dict]:
     cache_key = f"history:{symbol}:{period}"
     cached = _cached(cache_key)
     if cached is not None:
         return cached
 
-    key = _key()
-    if not key:
-        print("[AV] ALPHA_VANTAGE_KEY manquant")
-        return []
-
-    av_sym = _av_symbol(symbol)
-    days   = PERIOD_DAYS.get(period, 180)
-    output = "compact" if days <= 100 else "full"
+    yf_range = PERIOD_TO_RANGE.get(period, "6mo")
+    url = f"https://query1.finance.yahoo.com/v8/finance/chart/{symbol}"
 
     try:
-        r = httpx.get(AV_BASE, params={
-            "function":   "TIME_SERIES_DAILY",
-            "symbol":     av_sym,
-            "outputsize": output,
-            "apikey":     key,
-        }, timeout=15)
+        r = httpx.get(url, params={
+            "interval":       interval,
+            "range":          yf_range,
+            "includePrePost": "false",
+            "events":         "div,splits",
+        }, headers=HEADERS, timeout=12, follow_redirects=True)
+
         data = r.json()
-
-        if "Note" in data:
-            print(f"[AV] Rate limit: {data['Note']}")
-            return []
-        if "Error Message" in data:
-            print(f"[AV ERROR] {data['Error Message']}")
+        result = data.get("chart", {}).get("result")
+        if not result:
+            err = data.get("chart", {}).get("error", {})
+            print(f"[YF] {symbol} erreur: {err}")
             return []
 
-        series = data.get("Time Series (Daily)", {})
-        cutoff = datetime.now() - timedelta(days=days)
+        r0          = result[0]
+        timestamps  = r0.get("timestamp", [])
+        indicators  = r0.get("indicators", {})
+        quote_data  = indicators.get("quote", [{}])[0]
+        opens       = quote_data.get("open",   [])
+        highs       = quote_data.get("high",   [])
+        lows        = quote_data.get("low",    [])
+        closes      = quote_data.get("close",  [])
+        volumes     = quote_data.get("volume", [])
+
         candles = []
-        for date_str, values in sorted(series.items()):
-            dt = datetime.strptime(date_str, "%Y-%m-%d")
-            if dt < cutoff:
-                continue
-            o = _clean(values.get("1. open"))
-            h = _clean(values.get("2. high"))
-            l = _clean(values.get("3. low"))
-            c = _clean(values.get("4. close"))
-            v = values.get("5. volume", "0")
+        for i, ts in enumerate(timestamps):
+            o = _clean(opens[i]  if i < len(opens)   else None)
+            h = _clean(highs[i]  if i < len(highs)   else None)
+            l = _clean(lows[i]   if i < len(lows)    else None)
+            c = _clean(closes[i] if i < len(closes)  else None)
+            v = volumes[i]       if i < len(volumes)  else 0
             if None in (o, h, l, c):
                 continue
+            date_str = datetime.utcfromtimestamp(ts).strftime("%Y-%m-%d")
             candles.append({
                 "time": date_str, "open": o, "high": h,
-                "low": l, "close": c, "volume": int(v),
+                "low": l, "close": c, "volume": int(v or 0),
             })
 
-        print(f"[AV] {symbol} → {av_sym} : {len(candles)} bougies")
+        print(f"[YF] {symbol}: {len(candles)} bougies ({period})")
         return _store(cache_key, candles)
 
     except Exception as e:
-        print(f"[AV HISTORY ERROR] {symbol}: {e}")
+        print(f"[YF HISTORY ERROR] {symbol}: {e}")
         return []
 
 
+# ── Quote temps réel ─────────────────────────────────────────────────────────
 def get_quote(symbol: str) -> dict:
     cache_key = f"quote:{symbol}"
     cached = _cached(cache_key)
     if cached is not None:
         return cached
 
-    key = _key()
-    if not key:
-        return {"symbol": symbol, "price": None, "error": "ALPHA_VANTAGE_KEY manquant"}
-
-    av_sym = _av_symbol(symbol)
+    url = "https://query1.finance.yahoo.com/v8/finance/quote"
     try:
-        r = httpx.get(AV_BASE, params={
-            "function": "GLOBAL_QUOTE",
-            "symbol":   av_sym,
-            "apikey":   key,
-        }, timeout=10)
-        q = r.json().get("Global Quote", {})
-        price = _clean(q.get("05. price"))
-        prev  = _clean(q.get("08. previous close"))
-        change = _clean(q.get("09. change"))
-        pct    = _clean(q.get("10. change percent", "0").replace("%", ""))
-        result = {
-            "symbol": symbol, "price": price, "prev_close": prev,
-            "change": change, "change_pct": pct,
-            "volume": q.get("06. volume"), "market_cap": None, "currency": "EUR",
+        r = httpx.get(url, params={
+            "symbols": symbol,
+            "fields":  "regularMarketPrice,regularMarketChange,"
+                       "regularMarketChangePercent,regularMarketPreviousClose,"
+                       "regularMarketVolume,marketCap,currency",
+        }, headers=HEADERS, timeout=10, follow_redirects=True)
+
+        data   = r.json()
+        result = data.get("quoteResponse", {}).get("result", [])
+        if not result:
+            return {"symbol": symbol, "price": None, "error": "Aucune donnée"}
+
+        q      = result[0]
+        price  = _clean(q.get("regularMarketPrice"))
+        prev   = _clean(q.get("regularMarketPreviousClose"))
+        change = _clean(q.get("regularMarketChange"))
+        pct    = _clean(q.get("regularMarketChangePercent"))
+        mcap   = q.get("marketCap")
+
+        result_dict = {
+            "symbol":     symbol,
+            "price":      price,
+            "prev_close": prev,
+            "change":     change,
+            "change_pct": round(pct, 2) if pct is not None else None,
+            "volume":     q.get("regularMarketVolume"),
+            "market_cap": mcap,
+            "currency":   q.get("currency", "EUR"),
         }
-        return _store(cache_key, result)
+        return _store(cache_key, result_dict)
+
     except Exception as e:
-        print(f"[AV QUOTE ERROR] {symbol}: {e}")
+        print(f"[YF QUOTE ERROR] {symbol}: {e}")
         return {"symbol": symbol, "price": None, "error": str(e)}
 
 
+# ── Indicateurs techniques ───────────────────────────────────────────────────
 def get_indicators(symbol: str, period: str = "6mo") -> dict:
     candles = get_history(symbol, period)
     if len(candles) < 20:
@@ -191,10 +189,10 @@ def get_indicators(symbol: str, period: str = "6mo") -> dict:
 
 def _signal(rsi, macd, macd_sig):
     b = m = 0
-    if rsi < 40: b += 1
+    if rsi < 40:   b += 1
     elif rsi > 65: m += 1
     if macd > macd_sig: b += 1
-    else: m += 1
+    else:               m += 1
     return "HAUSSIER" if b > m else "BAISSIER" if m > b else "NEUTRE"
 
 
