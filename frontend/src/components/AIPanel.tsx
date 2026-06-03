@@ -26,8 +26,8 @@ export function AIPanel({ symbol, articles, indicators }: Props) {
         <div className="flex items-center gap-2">
           <Sparkles size={15} className="text-blue-400" />
           <span className="text-sm font-semibold text-white">Analyse IA</span>
-          <span className="text-xs bg-gradient-to-r from-blue-500 to-cyan-400 text-white px-2 py-0.5 rounded-full font-semibold">
-            Gemini
+          <span className="text-xs bg-gradient-to-r from-violet-500 to-purple-400 text-white px-2 py-0.5 rounded-full font-semibold">
+            Groq · Llama 3
           </span>
         </div>
         <button
@@ -35,7 +35,7 @@ export function AIPanel({ symbol, articles, indicators }: Props) {
           disabled={mutation.isPending}
           className="text-xs bg-yellow-500/20 hover:bg-yellow-500/30 text-yellow-400 rounded-lg px-3 py-1 transition-colors disabled:opacity-40"
         >
-          {mutation.isPending ? 'Gemini analyse…' : 'Analyser avec Gemini'}
+          {mutation.isPending ? 'Analyse en cours…' : 'Analyser avec l\'IA'}
         </button>
       </div>
 
