@@ -47,3 +47,9 @@ export const analyzeSentiment = (payload: {
   candles?: object[]
 }): Promise<AIAnalysis> =>
   api.post('/analysis/sentiment', payload).then(r => r.data)
+
+export const getSignals = () =>
+  api.get('/signals/daily').then(r => r.data)
+
+export const refreshSignals = () =>
+  api.post('/signals/refresh').then(r => r.data)

@@ -6,7 +6,7 @@ from pathlib import Path
 # Chemin absolu vers le .env, peu importe d'où uvicorn est lancé
 load_dotenv(Path(__file__).parent / ".env", override=True)
 
-from routers import stocks, news, simulator, analysis
+from routers import stocks, news, simulator, analysis, signals
 
 app = FastAPI(title="TradeTrack-Ninja API", version="1.0.0")
 
@@ -27,6 +27,7 @@ app.include_router(stocks.router)
 app.include_router(news.router)
 app.include_router(simulator.router)
 app.include_router(analysis.router)
+app.include_router(signals.router)
 
 
 @app.get("/")

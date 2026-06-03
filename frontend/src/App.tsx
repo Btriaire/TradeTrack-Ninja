@@ -3,7 +3,7 @@ import { useQuery } from '@tanstack/react-query'
 import {
   BarChart2, Newspaper, Calculator, Sparkles,
   Activity, Menu, X, Monitor, Smartphone, RotateCcw,
-  Search, PieChart,
+  Search, PieChart, Zap,
 } from 'lucide-react'
 import { Watchlist }       from './components/Watchlist'
 import { StockChart }      from './components/StockChart'
@@ -15,13 +15,14 @@ import { AuthButton }      from './components/AuthButton'
 import { IndicesBar }      from './components/IndicesBar'
 import { SearchModal }     from './components/SearchModal'
 import { Portfolio }       from './components/Portfolio'
+import { DailySignals }   from './components/DailySignals'
 import { useAuth }         from './hooks/useAuth'
 import { useWatchlist }    from './hooks/useWatchlist'
 import { usePortfolio }    from './hooks/usePortfolio'
 import { useLayout }       from './hooks/useLayout'
 import { getHistory, getIndicators, getQuote, getNews } from './services/api'
 
-type Tab = 'chart' | 'news' | 'simulator' | 'ai' | 'portfolio'
+type Tab = 'chart' | 'news' | 'simulator' | 'ai' | 'portfolio' | 'signals'
 
 const TABS: { id: Tab; label: string; icon: any }[] = [
   { id: 'chart',     label: 'Graphique',  icon: BarChart2  },
@@ -29,6 +30,7 @@ const TABS: { id: Tab; label: string; icon: any }[] = [
   { id: 'simulator', label: 'Simulateur', icon: Calculator },
   { id: 'ai',        label: 'Analyse IA', icon: Sparkles   },
   { id: 'portfolio', label: 'Portfolio',  icon: PieChart   },
+  { id: 'signals',   label: 'Signaux',    icon: Zap        },
 ]
 
 export default function App() {
@@ -221,6 +223,14 @@ export default function App() {
               onSelect={handleSelectSymbol}
               onOpenSearch={() => setSearchOpen(true)}
               user={user}
+            />
+          )}
+          {activeTab === 'signals' && (
+            <DailySignals
+              onSelectSymbol={handleSelectSymbol}
+              onAddWatchlist={addItem}
+              onAddPortfolio={addPosition}
+              watchlistSymbols={watchlistItems.map(i => i.symbol)}
             />
           )}
         </main>
