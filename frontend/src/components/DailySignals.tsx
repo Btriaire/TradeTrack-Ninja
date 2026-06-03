@@ -218,7 +218,7 @@ export function DailySignals({ onSelectSymbol, onAddWatchlist, onAddPortfolio, w
                 Aucune opportunité détectée actuellement
               </div>
             ) : (
-              great.map(s => (
+              great.map((s: SignalCard) => (
                 <SignalCardUI
                   key={s.symbol} s={s} type="buy"
                   onSelectSymbol={onSelectSymbol}
@@ -242,7 +242,7 @@ export function DailySignals({ onSelectSymbol, onAddWatchlist, onAddPortfolio, w
                 Aucun signal de vente détecté actuellement
               </div>
             ) : (
-              away.map(s => (
+              away.map((s: SignalCard) => (
                 <SignalCardUI
                   key={s.symbol} s={s} type="sell"
                   onSelectSymbol={onSelectSymbol}

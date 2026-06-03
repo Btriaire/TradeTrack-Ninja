@@ -1,8 +1,5 @@
 import { useEffect, useRef, useState } from 'react'
-import {
-  createChart, ColorType, CrosshairMode,
-  CandlestickSeries, LineSeries, AreaSeries, BarSeries, HistogramSeries,
-} from 'lightweight-charts'
+import { createChart, ColorType, CrosshairMode } from 'lightweight-charts'
 import type { Candle, Indicators } from '../types'
 
 type ChartType = 'candles' | 'heikin' | 'line' | 'area' | 'bars'
@@ -64,7 +61,7 @@ export function StockChart({ candles, indicators, symbol }: Props) {
 
     // ── Série principale selon le type ──────────────────────────────────────
     if (chartType === 'candles' || chartType === 'heikin') {
-      const series = chart.addSeries(CandlestickSeries, {
+      const series = chart.addCandlestickSeries({
         upColor:       '#10b981',
         downColor:     '#ef4444',
         borderVisible: false,
@@ -74,21 +71,21 @@ export function StockChart({ candles, indicators, symbol }: Props) {
       series.setData(data as any)
 
     } else if (chartType === 'bars') {
-      const series = chart.addSeries(BarSeries, {
+      const series = chart.addBarSeries({
         upColor:   '#10b981',
         downColor: '#ef4444',
       })
       series.setData(data as any)
 
     } else if (chartType === 'line') {
-      const series = chart.addSeries(LineSeries, {
+      const series = chart.addLineSeries({
         color:     '#3b82f6',
         lineWidth: 2,
       })
       series.setData(candles.map(c => ({ time: c.time, value: c.close })) as any)
 
     } else if (chartType === 'area') {
-      const series = chart.addSeries(AreaSeries, {
+      const series = chart.addAreaSeries({
         lineColor:    '#3b82f6',
         topColor:     '#3b82f620',
         bottomColor:  '#3b82f600',
@@ -97,26 +94,26 @@ export function StockChart({ candles, indicators, symbol }: Props) {
       series.setData(candles.map(c => ({ time: c.time, value: c.close })) as any)
     }
 
-    // ── Indicateurs (sur tous les types sauf line/area si besoin) ───────────
+    // ── Indicateurs ─────────────────────────────────────────────────────────
     if (indicators?.sma20) {
-      const sma20 = chart.addSeries(LineSeries, {
+      const sma20 = chart.addLineSeries({
         color: '#f59e0b', lineWidth: 1, title: 'SMA20',
       })
       sma20.setData(candles.map(c => ({ time: c.time, value: indicators.sma20 })) as any)
     }
 
     if (indicators?.sma50) {
-      const sma50 = chart.addSeries(LineSeries, {
+      const sma50 = chart.addLineSeries({
         color: '#a78bfa', lineWidth: 1, title: 'SMA50',
       })
       sma50.setData(candles.map(c => ({ time: c.time, value: indicators.sma50 })) as any)
     }
 
     if (indicators?.bb_upper && indicators?.bb_lower) {
-      const bbUp = chart.addSeries(LineSeries, {
+      const bbUp = chart.addLineSeries({
         color: '#3b82f688', lineWidth: 1, lineStyle: 2, title: 'BB+',
       })
-      const bbLo = chart.addSeries(LineSeries, {
+      const bbLo = chart.addLineSeries({
         color: '#3b82f688', lineWidth: 1, lineStyle: 2, title: 'BB-',
       })
       bbUp.setData(candles.map(c => ({ time: c.time, value: indicators.bb_upper })) as any)
@@ -124,7 +121,7 @@ export function StockChart({ candles, indicators, symbol }: Props) {
     }
 
     // ── Volume ───────────────────────────────────────────────────────────────
-    const volSeries = chart.addSeries(HistogramSeries, {
+    const volSeries = chart.addHistogramSeries({
       color:        '#253654',
       priceFormat:  { type: 'volume' },
       priceScaleId: 'volume',
