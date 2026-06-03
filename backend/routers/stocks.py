@@ -128,6 +128,50 @@ def search(q: str, market: str = "ALL"):
         return []
 
 
+@router.get("/markets")
+async def get_markets():
+    """Retourne toutes les valeurs de l'univers avec leurs cotations en temps réel."""
+    from services.signal_engine import UNIVERSE
+    import asyncio
+
+    symbols = [s["symbol"] for s in UNIVERSE]
+
+    async def fetch_batch(syms: list) -> list:
+        try:
+            async with httpx.AsyncClient(headers=HEADERS, timeout=15) as client:
+                r = await client.get(
+                    "https://query1.finance.yahoo.com/v8/finance/quote",
+                    params={
+                        "symbols": ",".join(syms),
+                        "fields":  "regularMarketPrice,regularMarketChangePercent,regularMarketVolume,marketCap,regularMarketDayHigh,regularMarketDayLow",
+                    },
+                )
+            return r.json().get("quoteResponse", {}).get("result", [])
+        except Exception as e:
+            print(f"[MARKETS] batch error: {e}")
+            return []
+
+    # Découpe en chunks de 20 (limite URL Yahoo)
+    chunks  = [symbols[i:i+20] for i in range(0, len(symbols), 20)]
+    batches = await asyncio.gather(*[fetch_batch(c) for c in chunks])
+    all_q   = [q for batch in batches for q in batch]
+    qmap    = {q["symbol"]: q for q in all_q}
+
+    enriched = []
+    for stock in UNIVERSE:
+        q = qmap.get(stock["symbol"], {})
+        enriched.append({
+            **stock,
+            "price":      round(q.get("regularMarketPrice",         0) or 0, 2),
+            "change_pct": round(q.get("regularMarketChangePercent", 0) or 0, 2),
+            "volume":     q.get("regularMarketVolume", 0) or 0,
+            "day_high":   round(q.get("regularMarketDayHigh", 0) or 0, 2),
+            "day_low":    round(q.get("regularMarketDayLow",  0) or 0, 2),
+            "market_cap": q.get("marketCap", 0) or 0,
+        })
+    return enriched
+
+
 @router.get("/indices")
 async def get_indices():
     """Retourne les cotations des principaux indices boursiers."""

@@ -48,6 +48,9 @@ export const analyzeSentiment = (payload: {
 }): Promise<AIAnalysis> =>
   api.post('/analysis/sentiment', payload).then(r => r.data)
 
+export const getMarkets = () =>
+  api.get('/stocks/markets').then(r => r.data)
+
 export const getSignals = () =>
   api.get('/signals/daily').then(r => r.data)
 
