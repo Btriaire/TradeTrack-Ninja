@@ -15,6 +15,7 @@ import { DiagnosticPanel } from './components/DiagnosticPanel'
 import { AuthButton }     from './components/AuthButton'
 import { IndicesBar }     from './components/IndicesBar'
 import { GameOfDay }      from './components/GameOfDay'
+import { TopSectors }     from './components/TopSectors'
 import { SearchModal }    from './components/SearchModal'
 import { Portfolio }      from './components/Portfolio'
 import { DailySignals }   from './components/DailySignals'
@@ -189,6 +190,9 @@ export default function App() {
 
       {/* ── Game of Today ───────────────────────────────────────────────── */}
       <GameOfDay onSelectSymbol={handleSelectSymbol} />
+
+      {/* ── Top Secteurs de la semaine ───────────────────────────────────── */}
+      <TopSectors onSelectSymbol={handleSelectSymbol} />
 
       {/* ── Navigation globale ──────────────────────────────────────────── */}
       <div className={`border-b border-dark-700 bg-dark-900 shrink-0 ${isMobile ? 'px-2 py-1.5' : 'px-4 py-2'}`}>

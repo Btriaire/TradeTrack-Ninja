@@ -174,6 +174,106 @@ Réponds avec UNE seule phrase, sans guillemets, directement."""
         return ""
 
 
+@router.get("/top-sectors")
+def top_sectors():
+    """
+    Top 3 secteurs en forte croissance de la semaine.
+    Agrège les scores/perf par secteur sur l'univers complet.
+    """
+    data       = get_signals_cached()
+    all_stocks = data.get("all_scores", [])
+
+    if not all_stocks:
+        return {"sectors": [], "brief": "", "date": datetime.now().strftime("%d/%m/%Y")}
+
+    # ── Agrégation par secteur ─────────────────────────────────────────────
+    sectors: dict = {}
+    for stock in all_stocks:
+        sec = stock.get("sector", "Autre")
+        if sec not in sectors:
+            sectors[sec] = {"stocks": [], "countries": set()}
+        sectors[sec]["stocks"].append(stock)
+        sectors[sec]["countries"].add(stock["country"])
+
+    sector_list = []
+    for sec_name, sec_data in sectors.items():
+        stocks = sec_data["stocks"]
+        if len(stocks) < 1:
+            continue
+        avg_score      = sum(s["score"]        for s in stocks) / len(stocks)
+        avg_perf5      = sum(s.get("perf_5j", 0)    for s in stocks) / len(stocks)
+        avg_potential  = sum(s["potential_pct"] for s in stocks) / len(stocks)
+        avg_change     = sum(s["change_pct"]    for s in stocks) / len(stocks)
+        top_stocks     = sorted(stocks, key=lambda s: s["score"], reverse=True)[:3]
+        best           = top_stocks[0]
+
+        sector_list.append({
+            "sector":          sec_name,
+            "avg_score":       round(avg_score, 2),
+            "avg_perf_5j":     round(avg_perf5, 2),
+            "avg_potential":   round(avg_potential, 1),
+            "avg_change":      round(avg_change, 2),
+            "stock_count":     len(stocks),
+            "countries":       sorted(sec_data["countries"]),
+            "top_stocks":      top_stocks,
+            "best_symbol":     best["symbol"],
+            "best_name":       best["name"],
+        })
+
+    # Tri : d'abord sur perf_5j, tie-break sur avg_score
+    sector_list.sort(key=lambda s: (s["avg_perf_5j"], s["avg_score"]), reverse=True)
+    top3 = sector_list[:3]
+
+    # ── Brief IA (mis en cache) ────────────────────────────────────────────
+    brief = data.get("sector_brief", "")
+    if not brief and top3:
+        brief = _generate_sector_brief(top3)
+        if _cache.get("data"):
+            _cache["data"]["sector_brief"] = brief
+
+    return {
+        "sectors":     top3,
+        "all_sectors": sector_list,
+        "brief":       brief,
+        "date":        datetime.now().strftime("%d/%m/%Y"),
+    }
+
+
+def _generate_sector_brief(sectors: list) -> str:
+    """Génère une accroche IA pour les secteurs en tête cette semaine."""
+    groq_key = os.getenv("GROQ_API_KEY", "")
+    if not groq_key or not sectors:
+        return ""
+
+    lines = " | ".join([
+        f"{s['sector']} (perf 5j: {s['avg_perf_5j']:+.1f}%, score: {s['avg_score']:+.1f}, pays: {', '.join(s['countries'][:3])})"
+        for s in sectors
+    ])
+    prompt = f"""Tu es analyste sectoriel expert. Génère UNE seule phrase d'accroche percutante (20-30 mots max)
+sur les secteurs les plus dynamiques de la semaine. Mentionne le contexte macro si pertinent.
+
+Top secteurs: {lines}
+
+Réponds avec UNE seule phrase, sans guillemets, directement en français."""
+
+    try:
+        r = httpx.post(
+            "https://api.groq.com/openai/v1/chat/completions",
+            headers={"Authorization": f"Bearer {groq_key}", "Content-Type": "application/json"},
+            json={
+                "model": "llama-3.1-8b-instant",
+                "messages": [{"role": "user", "content": prompt}],
+                "temperature": 0.5,
+                "max_tokens": 80,
+            },
+            timeout=10,
+        )
+        return r.json()["choices"][0]["message"]["content"].strip().strip('"')
+    except Exception as e:
+        print(f"[SECTOR BRIEF] {e}")
+        return ""
+
+
 @router.get("/universe")
 def get_universe():
     """Retourne la liste des valeurs analysées."""

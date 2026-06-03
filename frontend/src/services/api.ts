@@ -63,6 +63,9 @@ export const getSignals = () =>
 export const getGameOfDay = () =>
   api.get('/signals/game').then(r => r.data)
 
+export const getTopSectors = () =>
+  api.get('/signals/top-sectors').then(r => r.data)
+
 export const refreshSignals = () =>
   api.post('/signals/refresh').then(r => r.data)
 
