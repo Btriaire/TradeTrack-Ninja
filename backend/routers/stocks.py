@@ -156,6 +156,53 @@ def get_markets():
     return results
 
 
+@router.get("/sectors")
+def get_sectors():
+    """Valeurs enrichies avec secteur, cotations et score pépite."""
+    from services.signal_engine import UNIVERSE, _cache as sig_cache
+    from services.yahoo_finance import get_quote
+    from concurrent.futures import ThreadPoolExecutor
+
+    # Construire la map des scores depuis le cache signaux
+    score_map: dict = {}
+    gem_buy:   set  = set()
+    gem_sell:  set  = set()
+    if sig_cache.get("data"):
+        for s in sig_cache["data"].get("great_catch", []):
+            score_map[s["symbol"]] = s.get("score", 0)
+            gem_buy.add(s["symbol"])
+        for s in sig_cache["data"].get("stay_away", []):
+            score_map[s["symbol"]] = s.get("score", 0)
+            gem_sell.add(s["symbol"])
+
+    def fetch_one(stock: dict) -> dict:
+        q = get_quote(stock["symbol"])
+        pct = q.get("change_pct") or 0
+        # Détection pépite : signal engine OU momentum fort
+        gem = None
+        if stock["symbol"] in gem_buy:
+            gem = "buy"
+        elif stock["symbol"] in gem_sell:
+            gem = "sell"
+        elif pct >= 3.0:
+            gem = "momentum+"
+        elif pct <= -4.0:
+            gem = "dip"
+        return {
+            **stock,
+            "price":      q.get("price")      or 0,
+            "change_pct": pct,
+            "volume":     q.get("volume")      or 0,
+            "score":      score_map.get(stock["symbol"], 0),
+            "gem":        gem,
+        }
+
+    with ThreadPoolExecutor(max_workers=10) as ex:
+        results = list(ex.map(fetch_one, UNIVERSE))
+
+    return results
+
+
 @router.get("/indices")
 async def get_indices():
     """Retourne les cotations des principaux indices boursiers."""

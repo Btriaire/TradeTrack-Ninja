@@ -51,6 +51,9 @@ export const analyzeSentiment = (payload: {
 export const getMarkets = () =>
   api.get('/stocks/markets').then(r => r.data)
 
+export const getSectors = () =>
+  api.get('/stocks/sectors').then(r => r.data)
+
 export const getSignals = () =>
   api.get('/signals/daily').then(r => r.data)
 
