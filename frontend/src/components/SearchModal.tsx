@@ -37,6 +37,7 @@ export function SearchModal({
   const [adding, setAdding] = useState<string | null>(null)  // symbol en cours d'ajout portfolio
   const [qty,    setQty]    = useState('1')
   const [price,  setPrice]  = useState('')
+  const [fees,   setFees]   = useState('')
   const inputRef = useRef<HTMLInputElement>(null)
 
   useEffect(() => { inputRef.current?.focus() }, [])
@@ -69,6 +70,7 @@ export function SearchModal({
     e.stopPropagation()
     setAdding(r.symbol)
     setPrice('')
+    setFees('')
   }
 
   const confirmAddPortfolio = (r: SearchResult) => {
@@ -78,6 +80,7 @@ export function SearchModal({
       quantity:  parseFloat(qty) || 1,
       buy_price: parseFloat(price) || 0,
       buy_date:  new Date().toISOString().split('T')[0],
+      fees:      parseFloat(fees) || 0,
     })
     setAdding(null)
   }
@@ -178,32 +181,57 @@ export function SearchModal({
 
               {/* Formulaire ajout portfolio inline */}
               {adding === r.symbol && (
-                <div className="px-4 py-3 bg-dark-700/60 border-b border-dark-600 flex items-center gap-2 flex-wrap">
-                  <span className="text-xs text-slate-400">Ajouter au portfolio :</span>
-                  <input
-                    type="number" min="0.001" step="0.001"
-                    value={qty} onChange={e => setQty(e.target.value)}
-                    placeholder="Qté"
-                    className="w-20 bg-dark-600 text-white text-xs rounded-lg px-2 py-1.5 outline-none border border-dark-500"
-                  />
-                  <input
-                    type="number" min="0" step="0.01"
-                    value={price} onChange={e => setPrice(e.target.value)}
-                    placeholder="Prix achat (€)"
-                    className="w-32 bg-dark-600 text-white text-xs rounded-lg px-2 py-1.5 outline-none border border-dark-500"
-                  />
-                  <button
-                    onClick={() => confirmAddPortfolio(r)}
-                    className="bg-green-500/20 text-green-400 hover:bg-green-500/30 text-xs px-3 py-1.5 rounded-lg transition-colors"
-                  >
-                    Confirmer
-                  </button>
-                  <button
-                    onClick={() => setAdding(null)}
-                    className="text-slate-500 hover:text-white text-xs px-2 py-1.5 transition-colors"
-                  >
-                    Annuler
-                  </button>
+                <div className="px-4 py-3 bg-dark-700/60 border-b border-dark-600">
+                  <div className="text-xs text-slate-400 mb-2 font-semibold">Ajouter au portfolio</div>
+                  <div className="flex items-center gap-2 flex-wrap">
+                    <div className="flex flex-col gap-0.5">
+                      <span className="text-[10px] text-slate-600 uppercase tracking-wider">Quantité</span>
+                      <input
+                        type="number" min="0.001" step="0.001"
+                        value={qty} onChange={e => setQty(e.target.value)}
+                        placeholder="1"
+                        className="w-20 bg-dark-600 text-white text-xs rounded-lg px-2 py-1.5 outline-none border border-dark-500 focus:border-accent-blue"
+                      />
+                    </div>
+                    <div className="flex flex-col gap-0.5">
+                      <span className="text-[10px] text-slate-600 uppercase tracking-wider">Prix achat</span>
+                      <input
+                        type="number" min="0" step="0.01"
+                        value={price} onChange={e => setPrice(e.target.value)}
+                        placeholder="0.00 €"
+                        className="w-28 bg-dark-600 text-white text-xs rounded-lg px-2 py-1.5 outline-none border border-dark-500 focus:border-accent-blue"
+                      />
+                    </div>
+                    <div className="flex flex-col gap-0.5">
+                      <span className="text-[10px] text-slate-600 uppercase tracking-wider">Frais courtage</span>
+                      <input
+                        type="number" min="0" step="0.01"
+                        value={fees} onChange={e => setFees(e.target.value)}
+                        placeholder="0.00 €"
+                        className="w-24 bg-dark-600 text-white text-xs rounded-lg px-2 py-1.5 outline-none border border-dark-500 focus:border-amber-500"
+                      />
+                    </div>
+                    <div className="flex items-end gap-2 pb-0">
+                      <button
+                        onClick={() => confirmAddPortfolio(r)}
+                        className="bg-green-500/20 text-green-400 hover:bg-green-500/30 text-xs px-3 py-1.5 rounded-lg transition-colors font-semibold mt-4"
+                      >
+                        ✓ Confirmer
+                      </button>
+                      <button
+                        onClick={() => setAdding(null)}
+                        className="text-slate-500 hover:text-white text-xs px-2 py-1.5 transition-colors mt-4"
+                      >
+                        Annuler
+                      </button>
+                    </div>
+                  </div>
+                  {qty && price && (
+                    <div className="mt-2 text-[10px] text-slate-600 font-mono">
+                      Coût total : {((parseFloat(qty)||0)*(parseFloat(price)||0)+(parseFloat(fees)||0)).toFixed(2)} €
+                      {fees ? ` (dont ${fees} € de frais)` : ''}
+                    </div>
+                  )}
                 </div>
               )}
             </div>

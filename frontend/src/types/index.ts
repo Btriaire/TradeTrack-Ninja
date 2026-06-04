@@ -90,5 +90,6 @@ export interface PortfolioPosition {
   quantity: number
   buy_price: number
   buy_date: string
+  fees?: number      // frais de courtage (€) — optionnel, défaut 0
   notes?: string
 }
