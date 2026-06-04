@@ -229,23 +229,8 @@ export default function App() {
         </div>
       </header>
 
-      {/* ── Bandeau ticker LCD ──────────────────────────────────────────── */}
-      <TickerBanner onSelectSymbol={handleSelectSymbol} />
-
-      {/* ── Barre des indices ────────────────────────────────────────────── */}
-      <IndicesBar />
-
-      {/* ── Banners (masquées sur le Dashboard qui les intègre déjà) ───── */}
-      {globalView !== 'dashboard' && (
-        <Suspense fallback={null}>
-          <GameOfDay onSelectSymbol={handleSelectSymbol} />
-          <TopSectors onSelectSymbol={handleSelectSymbol} />
-          <GeoEvents />
-        </Suspense>
-      )}
-
       {/* ── Navigation globale ──────────────────────────────────────────── */}
-      <div className={`border-b border-dark-700 bg-dark-900 shrink-0 ${isMobile ? 'px-2 py-2' : 'px-4 py-2.5'}`}>
+      <div className={`border-b border-dark-700 bg-dark-900 shrink-0 ${isMobile ? 'px-2 py-2' : 'px-4 py-3'}`}>
         <div className={`flex gap-1.5 ${isMobile ? 'overflow-x-auto scrollbar-none' : 'max-w-3xl gap-2'}`}>
           {GLOBAL_VIEWS.map(({ id, label, short, icon: Icon, desc }) => {
             const isActive = globalView === id
@@ -273,13 +258,13 @@ export default function App() {
               <button
                 key={id}
                 onClick={() => setGlobalView(id)}
-                className={`relative flex items-center justify-center gap-1.5 rounded-lg text-sm font-semibold transition-all shrink-0 ${
-                  isMobile ? 'px-3 py-2.5 flex-col gap-0.5' : 'flex-1 px-3.5 py-2.5'
+                className={`relative flex items-center justify-center gap-2 rounded-xl text-base font-semibold transition-all shrink-0 ${
+                  isMobile ? 'px-3 py-3 flex-col gap-1' : 'flex-1 px-4 py-3'
                 } ${activeClass}`}
               >
-                <Icon size={isMobile ? 18 : 15} className="shrink-0" />
+                <Icon size={isMobile ? 20 : 18} className="shrink-0" />
                 {isMobile ? (
-                  <span className="text-[11px] leading-none font-medium whitespace-nowrap">{short}</span>
+                  <span className="text-[12px] leading-none font-semibold whitespace-nowrap">{short}</span>
                 ) : (
                   <div className="text-left min-w-0">
                     <div className="truncate flex items-center gap-1.5">
@@ -311,6 +296,21 @@ export default function App() {
           })}
         </div>
       </div>
+
+      {/* ── Bandeau ticker LCD ──────────────────────────────────────────── */}
+      <TickerBanner onSelectSymbol={handleSelectSymbol} />
+
+      {/* ── Barre des indices ────────────────────────────────────────────── */}
+      <IndicesBar />
+
+      {/* ── Banners (masquées sur le Dashboard qui les intègre déjà) ───── */}
+      {globalView !== 'dashboard' && (
+        <Suspense fallback={null}>
+          <GameOfDay onSelectSymbol={handleSelectSymbol} />
+          <TopSectors onSelectSymbol={handleSelectSymbol} />
+          <GeoEvents />
+        </Suspense>
+      )}
 
       {/* ── Body ────────────────────────────────────────────────────────── */}
       <div className="flex flex-1 overflow-hidden relative">
