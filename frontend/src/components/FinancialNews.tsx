@@ -1,7 +1,7 @@
 import { useState } from 'react'
 import { useQuery } from '@tanstack/react-query'
-import { X, ExternalLink, RefreshCw, Newspaper, Clock, ChevronRight } from 'lucide-react'
-import { getGeneralNews } from '../services/api'
+import { X, ExternalLink, RefreshCw, Newspaper, Clock, ChevronRight, User, Globe, AlertCircle, Loader2 } from 'lucide-react'
+import { getGeneralNews, getArticleContent } from '../services/api'
 
 interface Article {
   source:   string
@@ -58,6 +58,23 @@ function ArticleModal({ article, onClose }: { article: Article; onClose: () => v
   // Fermer sur Escape
   const handleKey = (e: React.KeyboardEvent) => { if (e.key === 'Escape') onClose() }
 
+  // Chargement du contenu complet via scraping backend
+  const { data: full, isLoading: loadingFull, isError: errorFull } = useQuery({
+    queryKey: ['article-content', article.url],
+    queryFn:  () => getArticleContent(article.url),
+    staleTime: 60 * 60 * 1000, // 1h
+    retry: 1,
+  })
+
+  // Image : préférer l'OG scrapée, sinon celle du RSS
+  const displayImage = full?.image || article.image
+  // Contenu : scrapé si disponible, sinon résumé RSS
+  const hasFullContent = full?.content && full.content.length > 100
+  // Paragraphes du contenu complet
+  const paragraphs = hasFullContent
+    ? full!.content.split('\n').map(p => p.trim()).filter(p => p.length > 20)
+    : null
+
   return (
     <div
       className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-black/70 backdrop-blur-sm"
@@ -65,36 +82,32 @@ function ArticleModal({ article, onClose }: { article: Article; onClose: () => v
       onKeyDown={handleKey}
     >
       <div
-        className="relative bg-dark-800 border border-dark-600 rounded-2xl w-full max-w-2xl max-h-[85vh] flex flex-col shadow-2xl"
+        className="relative bg-dark-800 border border-dark-600 rounded-2xl w-full max-w-2xl max-h-[90vh] flex flex-col shadow-2xl"
         onClick={e => e.stopPropagation()}
       >
         {/* Scan line déco */}
         <div className="absolute top-0 left-8 right-8 h-px bg-gradient-to-r from-transparent via-cyan-500/40 to-transparent rounded-t-2xl"/>
 
-        {/* Image */}
-        {article.image && (
-          <div className="relative h-48 rounded-t-2xl overflow-hidden shrink-0">
+        {/* Image hero */}
+        {displayImage ? (
+          <div className="relative h-52 rounded-t-2xl overflow-hidden shrink-0">
             <img
-              src={article.image}
+              src={displayImage}
               alt=""
               className="w-full h-full object-cover"
-              onError={e => { (e.target as HTMLImageElement).style.display = 'none' }}
+              onError={e => { (e.target as HTMLImageElement).parentElement!.style.display = 'none' }}
             />
-            <div className="absolute inset-0 bg-gradient-to-t from-dark-800 to-transparent"/>
-            {/* Badge source sur l'image */}
+            <div className="absolute inset-0 bg-gradient-to-t from-dark-800 via-dark-800/40 to-transparent"/>
             <div className="absolute bottom-3 left-4">
               <span className={`text-xs px-2 py-1 rounded-full border font-medium ${badgeCls}`}>
                 {article.flag} {article.source}
               </span>
             </div>
-            <button onClick={onClose} className="absolute top-3 right-3 p-1.5 rounded-lg bg-black/40 text-white hover:bg-black/60 transition-colors">
+            <button onClick={onClose} className="absolute top-3 right-3 p-1.5 rounded-lg bg-black/50 text-white hover:bg-black/70 transition-colors">
               <X size={16}/>
             </button>
           </div>
-        )}
-
-        {/* Header si pas d'image */}
-        {!article.image && (
+        ) : (
           <div className="flex items-center justify-between px-6 pt-5 pb-3 shrink-0">
             <span className={`text-xs px-2.5 py-1 rounded-full border font-medium ${badgeCls}`}>
               {article.flag} {article.source}
@@ -106,10 +119,11 @@ function ArticleModal({ article, onClose }: { article: Article; onClose: () => v
         )}
 
         {/* Content scrollable */}
-        <div className="flex-1 overflow-y-auto px-6 py-4 space-y-4">
-          {/* Méta */}
-          <div className="flex items-center gap-3 flex-wrap">
-            {article.image && (
+        <div className="flex-1 overflow-y-auto px-6 py-4 space-y-4 scrollbar-thin scrollbar-thumb-dark-600">
+
+          {/* Méta row */}
+          <div className="flex items-center gap-2 flex-wrap">
+            {displayImage && (
               <span className={`text-xs px-2 py-0.5 rounded-full border ${badgeCls}`}>
                 {article.flag} {article.source}
               </span>
@@ -118,25 +132,65 @@ function ArticleModal({ article, onClose }: { article: Article; onClose: () => v
               {article.category}
             </span>
             <div className="flex items-center gap-1 text-xs text-slate-600">
-              <Clock size={11}/>
-              {formatDate(article.date)}
+              <Clock size={10}/>{formatDate(article.date)}
             </div>
+            {full?.author && (
+              <div className="flex items-center gap-1 text-xs text-slate-600">
+                <User size={10}/>{full.author}
+              </div>
+            )}
+            {full?.sitename && !displayImage && (
+              <div className="flex items-center gap-1 text-xs text-slate-600">
+                <Globe size={10}/>{full.sitename}
+              </div>
+            )}
           </div>
 
           {/* Titre */}
-          <h2 className="text-white font-bold text-lg leading-snug">{article.title}</h2>
+          <h2 className="text-white font-bold text-lg leading-snug">{full?.title || article.title}</h2>
 
-          {/* Résumé */}
-          {article.summary ? (
-            <p className="text-slate-300 text-sm leading-relaxed">{article.summary}</p>
-          ) : (
-            <p className="text-slate-500 text-sm italic">Résumé non disponible — cliquez sur "Lire l'article" pour accéder au contenu complet.</p>
+          {/* ── Contenu principal ───────────────────────────── */}
+          {loadingFull && (
+            <div className="flex items-center gap-2 text-slate-500 text-sm py-4">
+              <Loader2 size={16} className="animate-spin text-cyan-500"/>
+              Chargement de l'article complet…
+            </div>
           )}
 
-          {/* Disclaimer */}
-          <p className="text-xs text-slate-700 border-t border-dark-700 pt-3">
-            ⚠️ Ceci est un extrait RSS — cliquez sur le bouton ci-dessous pour lire l'article complet sur le site de la source.
-          </p>
+          {!loadingFull && hasFullContent && (
+            <div className="space-y-3">
+              {paragraphs!.map((p, i) => (
+                <p key={i} className="text-slate-300 text-sm leading-relaxed">{p}</p>
+              ))}
+            </div>
+          )}
+
+          {/* Résumé RSS si pas de contenu complet */}
+          {!loadingFull && !hasFullContent && (
+            <>
+              {article.summary ? (
+                <p className="text-slate-300 text-sm leading-relaxed">{article.summary}</p>
+              ) : null}
+              {errorFull || (!hasFullContent && !loadingFull) ? (
+                <div className="flex items-start gap-2 bg-amber-500/10 border border-amber-500/20 rounded-lg px-3 py-2.5 text-xs text-amber-400/80">
+                  <AlertCircle size={14} className="shrink-0 mt-0.5"/>
+                  <span>
+                    Contenu complet non disponible (site protégé ou JavaScript requis).
+                    Cliquez sur "Lire l'article" pour accéder à la version originale.
+                  </span>
+                </div>
+              ) : null}
+            </>
+          )}
+
+          {/* Lien vers source */}
+          <div className="border-t border-dark-700 pt-3 flex items-center gap-2">
+            <Globe size={11} className="text-slate-600"/>
+            <a href={article.url} target="_blank" rel="noopener noreferrer"
+              className="text-xs text-slate-600 hover:text-cyan-400 transition-colors truncate">
+              {article.url}
+            </a>
+          </div>
         </div>
 
         {/* Footer sticky */}
@@ -150,7 +204,7 @@ function ArticleModal({ article, onClose }: { article: Article; onClose: () => v
             rel="noopener noreferrer"
             className="flex items-center gap-2 text-sm bg-accent-blue hover:bg-blue-500 text-white px-4 py-2 rounded-lg transition-colors font-medium"
           >
-            Lire l'article complet
+            Lire sur {article.source}
             <ExternalLink size={13}/>
           </a>
         </div>

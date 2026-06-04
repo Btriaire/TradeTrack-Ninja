@@ -63,6 +63,11 @@ export const getSectors = () =>
 export const getGeneralNews = (category = 'Tout') =>
   api.get('/news/general', { params: category !== 'Tout' ? { category } : {} }).then(r => r.data)
 
+export const getArticleContent = (url: string) =>
+  api.get('/news/article', { params: { url } }).then(r => r.data as {
+    url: string; content: string; title: string; image: string | null; author: string | null; sitename: string
+  })
+
 export const getSignals = () =>
   api.get('/signals/daily').then(r => r.data)
 
