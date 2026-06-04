@@ -3,7 +3,7 @@ import { useQuery, useQueryClient } from '@tanstack/react-query'
 import {
   BarChart2, Newspaper, Calculator, Sparkles,
   Activity, Menu, X, Monitor, Smartphone, RotateCcw,
-  Search, PieChart, Zap, Globe, TrendingUp, Rss, Stethoscope, Telescope, Building2,
+  Search, PieChart, Zap, Globe, TrendingUp, Rss, Stethoscope, Telescope, Building2, Crosshair,
 } from 'lucide-react'
 
 // ── Imports directs — composants utilisés immédiatement au chargement ──────────
@@ -26,6 +26,7 @@ const DiagnosticPanel = lazy(() => import('./components/DiagnosticPanel').then(m
 const CloturePanel    = lazy(() => import('./components/CloturePanel').then(m => ({ default: m.CloturePanel })))
 const CompanyProfile  = lazy(() => import('./components/CompanyProfile').then(m => ({ default: m.CompanyProfile })))
 const IntradayChart   = lazy(() => import('./components/IntradayChart').then(m => ({ default: m.IntradayChart })))
+const MagnifyPanel    = lazy(() => import('./components/MagnifyPanel').then(m => ({ default: m.MagnifyPanel })))
 const GameOfDay       = lazy(() => import('./components/GameOfDay').then(m => ({ default: m.GameOfDay })))
 const TopSectors      = lazy(() => import('./components/TopSectors').then(m => ({ default: m.TopSectors })))
 const GeoEvents       = lazy(() => import('./components/GeoEvents').then(m => ({ default: m.GeoEvents })))
@@ -78,10 +79,11 @@ const SYMBOL_META: Record<string, { sector: string; index: string; name: string 
 }
 
 // ── Onglets spécifiques à une valeur ─────────────────────────────────────────
-type StockTab = 'chart' | 'news' | 'simulator' | 'ai' | 'diagnostic' | 'cloture' | 'fiche' | 'portfolio'
+type StockTab = 'chart' | 'news' | 'simulator' | 'ai' | 'diagnostic' | 'cloture' | 'fiche' | 'portfolio' | 'magnify'
 
-const STOCK_TABS: { id: StockTab; label: string; icon: any }[] = [
+const STOCK_TABS: { id: StockTab; label: string; icon: any; highlight?: boolean }[] = [
   { id: 'chart',      label: 'Graphique',   icon: BarChart2    },
+  { id: 'magnify',    label: 'Magnify',     icon: Crosshair,   highlight: true },
   { id: 'news',       label: 'Actualités',  icon: Newspaper    },
   { id: 'simulator',  label: 'Simulateur',  icon: Calculator   },
   { id: 'ai',         label: 'Analyse IA',  icon: Sparkles     },
@@ -418,11 +420,19 @@ export default function App() {
 
               {/* Onglets valeur */}
               <div className={`flex gap-1 bg-dark-800 rounded-xl p-1 ${isMobile ? 'overflow-x-auto scrollbar-none' : ''}`}>
-                {STOCK_TABS.map(({ id, label, icon: Icon }) => (
+                {STOCK_TABS.map(({ id, label, icon: Icon, highlight }) => (
                   <button key={id} onClick={() => setActiveTab(id)}
                     className={`flex items-center justify-center gap-1.5 py-2 rounded-lg text-xs font-semibold transition-colors shrink-0 ${
                       isMobile ? 'flex-none px-3.5' : 'flex-1'
-                    } ${activeTab === id ? 'bg-dark-600 text-white' : 'text-slate-500 hover:text-slate-300'}`}>
+                    } ${
+                      activeTab === id
+                        ? highlight
+                          ? 'bg-cyan-500/20 text-cyan-400 border border-cyan-500/30'
+                          : 'bg-dark-600 text-white'
+                        : highlight
+                          ? 'text-cyan-600 hover:text-cyan-400 hover:bg-cyan-500/10 border border-transparent'
+                          : 'text-slate-500 hover:text-slate-300'
+                    }`}>
                     <Icon size={12} />
                     {isMobile
                       ? <span className="text-[10px]">{label.split(' ')[0]}</span>
@@ -432,6 +442,7 @@ export default function App() {
                 ))}
               </div>
 
+              {activeTab === 'magnify'    && <MagnifyPanel symbol={symbol} />}
               {activeTab === 'chart' && showIntraday && <IntradayChart symbol={symbol} />}
               {activeTab === 'chart' && !showIntraday && <StockChart candles={candles} indicators={indicators} symbol={symbol} />}
               {activeTab === 'news'       && <NewsPanel symbol={symbol} />}
