@@ -111,6 +111,40 @@ PERIOD_TO_RANGE = {
     "1y":  "1y",  "2y":  "2y",  "5y":  "5y",
 }
 
+# ── Crumb Yahoo Finance (requis pour /v10/quoteSummary depuis 2024) ───────────
+# Yahoo exige un cookie + crumb valide pour ces endpoints.
+# On maintient un client httpx persistant (cookie jar) et on rafraîchit le
+# crumb toutes les 4h ou sur 401.
+_crumb_lock   = threading.Lock()
+_crumb_state  = {"crumb": None, "ts": 0.0}
+_crumb_client = httpx.Client(headers=HEADERS, follow_redirects=True, timeout=15)
+CRUMB_TTL     = 4 * 3600   # 4 heures
+
+def _get_crumb(force: bool = False) -> Optional[str]:
+    """Retourne un crumb Yahoo Finance valide. Rafraîchit si expiré ou force=True."""
+    with _crumb_lock:
+        now = time.time()
+        if not force and _crumb_state["crumb"] and (now - _crumb_state["ts"]) < CRUMB_TTL:
+            return _crumb_state["crumb"]
+        try:
+            # 1. Visite la page d'accueil pour obtenir les cookies de session
+            _crumb_client.get("https://finance.yahoo.com/", timeout=10)
+            # 2. Obtient le crumb avec ces cookies
+            r = _crumb_client.get(
+                "https://query1.finance.yahoo.com/v1/test/getcrumb",
+                timeout=10,
+            )
+            crumb = r.text.strip()
+            if crumb and len(crumb) > 3 and "<" not in crumb:
+                _crumb_state["crumb"] = crumb
+                _crumb_state["ts"]    = now
+                print(f"[CRUMB] rafraîchi: {crumb[:6]}…")
+                return crumb
+            print(f"[CRUMB] réponse invalide: {r.text[:60]}")
+        except Exception as e:
+            print(f"[CRUMB ERROR] {e}")
+        return None
+
 # ── Heures de trading par fuseau (heure locale, lundi-vendredi) ──────────────
 # Format : liste de (open_minutes, close_minutes) depuis minuit
 _TRADING_HOURS: dict[str, list[tuple[int, int]]] = {
@@ -625,106 +659,72 @@ def get_intraday(symbol: str, interval: str = "5m") -> dict:
 
 
 # ── Profil société ────────────────────────────────────────────────────────────
+# Utilise la librairie yfinance qui gère le crumb/consent Yahoo automatiquement.
 _profile_cache: dict = {}
 PROFILE_TTL = 6 * 3600  # 6 heures
 
 def get_profile(symbol: str) -> dict:
-    """Profil complet de la société via Yahoo Finance quoteSummary."""
+    """Profil complet via yfinance (gère crumb + consent GDPR)."""
     key = f"profile:{symbol}"
     entry = _profile_cache.get(key)
     if entry and (time.time() - entry[0]) < PROFILE_TTL:
         return entry[1]
 
-    modules = "assetProfile,defaultKeyStatistics,financialData,summaryDetail,price"
-    url = f"https://query1.finance.yahoo.com/v10/finance/quoteSummary/{symbol}"
-
     try:
-        r = httpx.get(
-            url,
-            params={"modules": modules, "formatted": "false"},
-            headers=HEADERS,
-            timeout=12,
-            follow_redirects=True,
-        )
-        data = r.json()
-        result = data.get("quoteSummary", {}).get("result")
-        if not result:
-            err = data.get("quoteSummary", {}).get("error", {})
-            print(f"[PROFILE] {symbol} erreur: {err}")
+        import yfinance as yf
+        t    = yf.Ticker(symbol)
+        info = t.info   # dict complet, crumb géré internement
+
+        if not info or not info.get("symbol"):
+            print(f"[PROFILE] {symbol}: réponse vide yfinance")
             return {}
 
-        res = result[0]
-
-        # ── assetProfile ──────────────────────────────────────────────────
-        asset = res.get("assetProfile", {})
-        # CEO : premier officier avec "Chief Executive" dans le titre
-        officers = asset.get("companyOfficers", [])
+        # CEO via companyOfficers si disponible
+        officers = info.get("companyOfficers") or []
         ceo = next(
             (o.get("name", "") for o in officers
-             if "chief executive" in o.get("title", "").lower()
-             or "ceo" in o.get("title", "").lower()),
+             if "chief executive" in (o.get("title") or "").lower()
+             or "ceo" in (o.get("title") or "").lower()),
             officers[0].get("name", "") if officers else ""
         )
-        # Année de fondation (rarement disponible dans YF, on met null)
-        founded = asset.get("foundedYear") or None
 
-        # ── summaryDetail ────────────────────────────────────────────────
-        sd = res.get("summaryDetail", {})
-
-        # ── defaultKeyStatistics ─────────────────────────────────────────
-        ks = res.get("defaultKeyStatistics", {})
-
-        # ── financialData ────────────────────────────────────────────────
-        fd = res.get("financialData", {})
-
-        # ── price ────────────────────────────────────────────────────────
-        pr = res.get("price", {})
-
-        def val(d: dict, *keys):
-            """Extrait la valeur numérique brute (pas le dict formatted)."""
-            for k in keys:
-                v = d.get(k)
-                if v is None:
-                    continue
-                if isinstance(v, dict):
-                    v = v.get("raw") or v.get("fmt") or None
-                if v is not None:
-                    return v
-            return None
+        def _v(key: str):
+            v = info.get(key)
+            return v if v not in (None, "N/A", "") else None
 
         profile = {
             # Identité
             "symbol":       symbol,
-            "name":         val(pr, "longName", "shortName") or symbol,
-            "sector":       asset.get("sector", ""),
-            "industry":     asset.get("industry", ""),
-            "country":      asset.get("country", ""),
-            "city":         asset.get("city", ""),
-            "website":      asset.get("website", ""),
-            "description":  asset.get("longBusinessSummary", ""),
-            "employees":    val(asset, "fullTimeEmployees"),
+            "name":         _v("longName") or _v("shortName") or symbol,
+            "sector":       _v("sector")       or "",
+            "industry":     _v("industry")     or "",
+            "country":      _v("country")      or "",
+            "city":         _v("city")         or "",
+            "website":      _v("website")      or "",
+            "description":  _v("longBusinessSummary") or "",
+            "employees":    _v("fullTimeEmployees"),
             "ceo":          ceo,
-            "founded":      founded,
+            "founded":      None,
             # Valorisation
-            "market_cap":   val(pr, "marketCap"),
-            "enterprise_value": val(ks, "enterpriseValue"),
-            "pe_trailing":  val(sd, "trailingPE"),
-            "pe_forward":   val(ks, "forwardPE"),
-            "peg_ratio":    val(ks, "pegRatio"),
-            "price_to_book": val(ks, "priceToBook"),
-            "beta":         val(ks, "beta"),
-            "dividend_yield": val(sd, "dividendYield"),
-            "52w_high":     val(sd, "fiftyTwoWeekHigh"),
-            "52w_low":      val(sd, "fiftyTwoWeekLow"),
+            "market_cap":      _v("marketCap"),
+            "enterprise_value":_v("enterpriseValue"),
+            "pe_trailing":     _v("trailingPE"),
+            "pe_forward":      _v("forwardPE"),
+            "peg_ratio":       _v("pegRatio"),
+            "price_to_book":   _v("priceToBook"),
+            "beta":            _v("beta"),
+            "dividend_yield":  _v("dividendYield"),
+            "52w_high":        _v("fiftyTwoWeekHigh"),
+            "52w_low":         _v("fiftyTwoWeekLow"),
             # Financiers
-            "revenue":      val(fd, "totalRevenue"),
-            "revenue_growth": val(fd, "revenueGrowth"),
-            "ebitda":       val(fd, "ebitda"),
-            "profit_margin": val(fd, "profitMargins"),
-            "roe":          val(fd, "returnOnEquity"),
-            "debt_to_equity": val(fd, "debtToEquity"),
-            "current_ratio": val(fd, "currentRatio"),
-            "currency":     val(pr, "currency"),
+            "revenue":         _v("totalRevenue"),
+            "revenue_growth":  _v("revenueGrowth"),
+            "ebitda":          _v("ebitda"),
+            "profit_margin":   _v("profitMargins"),
+            "roe":             _v("returnOnEquity"),
+            "debt_to_equity":  _v("debtToEquity"),
+            "current_ratio":   _v("currentRatio"),
+            "currency":        _v("currency"),
         }
 
         print(f"[PROFILE] {symbol}: ok (secteur={profile['sector']})")
