@@ -1,22 +1,22 @@
 /**
- * TickerBanner — bandeau défilant style Bloomberg
- * Vert fluo néon si marché ouvert, vert clair si fermé — toujours lisible.
+ * TickerBanner — panneau LCD dot-matrix style années 80
+ * Police pixelisée VT323, scanlines, effet phosphore vert
  */
 import { useQuery } from '@tanstack/react-query'
 import { getIndices } from '../services/api'
 
 interface IndexQuote {
-  name:         string
-  symbol:       string
-  price:        number
-  change_pct:   number
-  change:       number
-  is_open?:     boolean
+  name:          string
+  symbol:        string
+  price:         number
+  change_pct:    number
+  change:        number
+  is_open?:      boolean
   market_state?: string
 }
 
 function fmt(v: number | null | undefined, dec = 2) {
-  if (v == null || !isFinite(v)) return '—'
+  if (v == null || !isFinite(v)) return '---'
   return v.toFixed(dec)
 }
 function sign(v: number) { return v >= 0 ? '+' : '' }
@@ -27,22 +27,33 @@ function TickerItem({ item }: { item: IndexQuote }) {
   const up     = pct >= 0
   const isOpen = item.is_open ?? false
 
-  // OUVERT : néon pur / FERMÉ : couleurs claires et lisibles quand même
-  const upColor   = isOpen ? '#39ff14' : '#66ff66'
-  const downColor = isOpen ? '#ff4444' : '#ff8888'
-  const col       = up ? upColor : downColor
-  const nameColor = isOpen ? '#b8ffb8' : '#99dd99'
-  const priceColor = isOpen ? '#ffffff' : '#ddffdd'
+  // Couleurs phosphore
+  const neonGreen = '#39ff14'
+  const softGreen = '#7fff50'
+  const neonRed   = '#ff3333'
+  const softRed   = '#ff7777'
+
+  const col       = up ? (isOpen ? neonGreen : softGreen) : (isOpen ? neonRed : softRed)
+  const nameCol   = isOpen ? '#a0ffa0' : '#80cc80'
+  const priceCol  = isOpen ? '#e8ffe8' : '#b8eeb8'
+
+  const glow = isOpen
+    ? `0 0 8px ${col}cc, 0 0 20px ${col}66`
+    : 'none'
 
   return (
-    <span className="inline-flex items-center gap-3 px-5 whitespace-nowrap select-none">
+    <span className="inline-flex items-center gap-2 px-4 whitespace-nowrap select-none font-lcd">
+
+      {/* Séparateur gauche — pixel */}
+      <span style={{ color: '#1a4a1a', fontSize: 16 }}>█</span>
 
       {/* Nom indice */}
       <span
-        className="text-[11px] font-mono font-bold uppercase tracking-widest"
         style={{
-          color:      nameColor,
-          textShadow: isOpen ? `0 0 14px ${nameColor}` : 'none',
+          color:      nameCol,
+          fontSize:   13,
+          textShadow: isOpen ? `0 0 10px ${nameCol}bb` : 'none',
+          letterSpacing: '0.08em',
         }}
       >
         {item.name ?? item.symbol}
@@ -50,26 +61,31 @@ function TickerItem({ item }: { item: IndexQuote }) {
 
       {/* Prix */}
       <span
-        className="text-[13px] font-mono font-black tabular-nums"
         style={{
-          color:      priceColor,
-          textShadow: isOpen ? `0 0 12px ${col}aa` : 'none',
+          color:      priceCol,
+          fontSize:   15,
+          fontWeight: 700,
+          textShadow: isOpen ? `0 0 12px ${priceCol}99` : 'none',
         }}
       >
         {(item.price ?? 0) > 0
           ? item.price.toLocaleString('fr-FR', { maximumFractionDigits: 0 })
-          : '—'}
+          : '----'}
       </span>
 
       {/* Badge variation */}
       <span
-        className="text-[12px] font-mono font-bold tabular-nums px-2 py-0.5 rounded"
         style={{
           color:      col,
-          background: up ? 'rgba(0,255,0,0.18)' : 'rgba(255,60,60,0.18)',
-          border:     `1px solid ${col}66`,
-          textShadow: isOpen ? `0 0 12px ${col}` : 'none',
-          boxShadow:  isOpen ? `0 0 10px ${col}55` : 'none',
+          fontSize:   14,
+          fontWeight: 700,
+          background: up ? 'rgba(0,80,0,0.5)' : 'rgba(80,0,0,0.5)',
+          border:     `1px solid ${col}55`,
+          borderRadius: 3,
+          padding:    '1px 6px',
+          textShadow: glow,
+          boxShadow:  isOpen ? `0 0 8px ${col}44, inset 0 0 6px ${col}22` : 'none',
+          display:    'inline-block',
         }}
       >
         {up ? '▲' : '▼'} {sign(pct)}{fmt(pct)}%
@@ -79,26 +95,18 @@ function TickerItem({ item }: { item: IndexQuote }) {
   )
 }
 
-// ── Séparateur ────────────────────────────────────────────────────────────────
-function Sep() {
-  return (
-    <span className="inline-block px-2 text-[11px] font-mono select-none" style={{ color: '#336633' }} aria-hidden>
-      ◆
-    </span>
-  )
-}
-
 // ── Skeleton ──────────────────────────────────────────────────────────────────
-const SKELETON_LABELS = ['CAC 40', 'DAX', 'S&P 500', 'NASDAQ', 'FTSE 100', 'Nikkei', 'Euro Stoxx']
+const SKELETON_LABELS = ['CAC 40', 'DAX', 'S&P 500', 'NASDAQ', 'FTSE 100', 'Nikkei 225', 'Euro Stoxx 50']
 
 function SkeletonItem({ label }: { label: string }) {
   return (
-    <span className="inline-flex items-center gap-3 px-5 whitespace-nowrap opacity-50">
-      <span className="text-[11px] font-mono font-bold uppercase tracking-widest" style={{ color: '#66aa66' }}>{label}</span>
-      <span className="text-[13px] font-mono font-black" style={{ color: '#558855' }}>─ ─ ─ ─</span>
-      <span className="text-[12px] font-mono px-2 py-0.5 rounded"
-            style={{ color: '#44aa44', background: 'rgba(0,200,0,0.10)', border: '1px solid #224422' }}>
-        ▲ --.-%
+    <span className="inline-flex items-center gap-2 px-4 whitespace-nowrap font-lcd opacity-40">
+      <span style={{ color: '#1a4a1a', fontSize: 16 }}>█</span>
+      <span style={{ color: '#669966', fontSize: 13, letterSpacing: '0.08em' }}>{label}</span>
+      <span style={{ color: '#446644', fontSize: 15 }}>----</span>
+      <span style={{ color: '#446644', fontSize: 14, border: '1px solid #224422',
+                     borderRadius: 3, padding: '1px 6px', background: 'rgba(0,40,0,0.4)' }}>
+        ▲ --.--%
       </span>
     </span>
   )
@@ -111,91 +119,110 @@ export function TickerBanner({ onSelectSymbol }: { onSelectSymbol?: (s: string) 
     queryFn:         getIndices,
     refetchInterval: 30_000,
     staleTime:       0,
-    retry:           2,
+    retry:           3,
   })
 
   const hasData = indices.length > 0
   const anyOpen = indices.some(i => i.is_open)
-  const dur     = hasData ? Math.max(20, indices.length * 5) : 16
+  const dur     = hasData ? Math.max(25, indices.length * 6) : 20
 
   const items = hasData ? [...indices, ...indices] : null
   const skels = hasData ? null : [...SKELETON_LABELS, ...SKELETON_LABELS]
 
   return (
     <div
-      className="relative h-9 border-b overflow-hidden flex items-center"
+      className="relative overflow-hidden"
       style={{
-        /* Fond vert foncé — visible, pas noir */
-        background:  '#061406',
-        borderColor: '#1a3a1a',
-        boxShadow:   anyOpen
-          ? 'inset 0 0 20px rgba(57,255,20,0.06), inset 0 -1px 0 rgba(57,255,20,0.15)'
-          : 'inset 0 -1px 0 rgba(0,200,0,0.08)',
+        height:      42,
+        background:  'linear-gradient(180deg, #020d02 0%, #041004 50%, #020d02 100%)',
+        borderBottom: '1px solid #1a3a1a',
+        borderTop:    '1px solid #0d200d',
+        boxShadow: anyOpen
+          ? 'inset 0 1px 0 rgba(57,255,20,0.08), inset 0 -1px 0 rgba(57,255,20,0.12), 0 2px 12px rgba(0,0,0,0.8)'
+          : 'inset 0 1px 0 rgba(0,60,0,0.3), 0 2px 12px rgba(0,0,0,0.8)',
       }}
     >
-      {/* Scanlines légères */}
+      {/* Overlay scanlines LCD */}
       <div
-        className="absolute inset-0 pointer-events-none z-10"
-        style={{ backgroundImage: 'repeating-linear-gradient(0deg,transparent,transparent 3px,rgba(0,0,0,0.1) 3px,rgba(0,0,0,0.1) 4px)' }}
+        className="absolute inset-0 pointer-events-none z-20 lcd-scanlines"
+        style={{ opacity: 0.5 }}
+      />
+      {/* Overlay dot-matrix */}
+      <div
+        className="absolute inset-0 pointer-events-none z-20 lcd-dots"
+        style={{ opacity: 0.3 }}
       />
 
-      {/* Label gauche */}
+      {/* Label gauche — style borne d'arcade */}
       <div
-        className="shrink-0 z-20 h-full flex items-center gap-2 px-3 border-r"
-        style={{ background: '#071607', borderColor: '#1a3a1a', minWidth: 68 }}
+        className="absolute left-0 top-0 bottom-0 z-30 flex items-center gap-2 px-3 font-lcd"
+        style={{
+          background:  'linear-gradient(90deg, #020d02 70%, transparent)',
+          minWidth:    80,
+          borderRight: '1px solid #1a3a1a',
+        }}
       >
+        {/* Indicateur LED */}
         <span
-          className="text-[9px] font-mono font-black tracking-[0.25em] uppercase"
           style={{
-            color:      anyOpen ? '#39ff14' : '#55cc55',
-            textShadow: anyOpen ? '0 0 12px #39ff14' : 'none',
+            display:    'inline-block',
+            width:      8,
+            height:     8,
+            borderRadius: 2,
+            background: anyOpen ? '#39ff14' : '#336633',
+            boxShadow:  anyOpen
+              ? '0 0 6px #39ff14, 0 0 14px #39ff1488'
+              : '0 0 4px #33663366',
+            animation:  anyOpen ? 'lcd-blink 1.4s step-end infinite' : 'none',
+            flexShrink: 0,
+          }}
+        />
+        <span
+          style={{
+            color:      anyOpen ? '#39ff14' : '#559955',
+            fontSize:   11,
+            letterSpacing: '0.2em',
+            textShadow: anyOpen ? '0 0 10px #39ff14cc' : 'none',
+            fontWeight: 700,
           }}
         >
           {isLoading && !hasData ? 'SYNC' : anyOpen ? 'LIVE' : 'CLÔ'}
         </span>
-        <span
-          className="w-2 h-2 rounded-full shrink-0"
-          style={{
-            background: anyOpen ? '#39ff14' : '#44bb44',
-            boxShadow:  anyOpen ? '0 0 8px #39ff14, 0 0 18px #39ff1466' : '0 0 4px #44bb4466',
-            animation:  anyOpen ? 'pulse 1.2s ease-in-out infinite' : 'none',
-          }}
-        />
       </div>
 
-      {/* Défilement */}
-      <div
-        className="ticker-scroll flex items-center h-full"
-        style={{ '--ticker-dur': `${dur}s` } as React.CSSProperties}
-      >
-        {items
-          ? items.map((idx, i) => (
-              <span key={`${idx.symbol}-${i}`} className="inline-flex items-center">
-                <button
-                  onClick={() => onSelectSymbol?.(idx.symbol)}
-                  className="focus:outline-none"
-                  tabIndex={-1}
-                  style={{ cursor: onSelectSymbol ? 'pointer' : 'default' }}
-                >
-                  <TickerItem item={idx} />
-                </button>
-                {i < items.length - 1 && <Sep />}
-              </span>
-            ))
-          : skels!.map((label, i) => (
-              <span key={`sk-${i}`} className="inline-flex items-center">
-                <SkeletonItem label={label} />
-                {i < skels!.length - 1 && <Sep />}
-              </span>
-            ))
-        }
+      {/* Zone défilement */}
+      <div className="absolute inset-0 flex items-center" style={{ paddingLeft: 86 }}>
+        <div
+          className="ticker-scroll flex items-center h-full"
+          style={{ '--ticker-dur': `${dur}s` } as React.CSSProperties}
+        >
+          {items
+            ? items.map((idx, i) => (
+                <span key={`${idx.symbol}-${i}`}>
+                  <button
+                    onClick={() => onSelectSymbol?.(idx.symbol)}
+                    className="focus:outline-none"
+                    tabIndex={-1}
+                    style={{ cursor: onSelectSymbol ? 'pointer' : 'default' }}
+                  >
+                    <TickerItem item={idx} />
+                  </button>
+                </span>
+              ))
+            : skels!.map((label, i) => (
+                <span key={`sk-${i}`}>
+                  <SkeletonItem label={label} />
+                </span>
+              ))
+          }
+        </div>
       </div>
 
-      {/* Fades côtés */}
-      <div className="absolute left-[68px] top-0 bottom-0 w-6 pointer-events-none z-10"
-           style={{ background: 'linear-gradient(90deg,#061406,transparent)' }}/>
-      <div className="absolute right-0 top-0 bottom-0 w-10 pointer-events-none z-10"
-           style={{ background: 'linear-gradient(270deg,#061406,transparent)' }}/>
+      {/* Fades phosphore côtés */}
+      <div className="absolute left-[86px] top-0 bottom-0 w-8 pointer-events-none z-10"
+           style={{ background: 'linear-gradient(90deg, #041004, transparent)' }}/>
+      <div className="absolute right-0 top-0 bottom-0 w-12 pointer-events-none z-10"
+           style={{ background: 'linear-gradient(270deg, #020d02, transparent)' }}/>
     </div>
   )
 }

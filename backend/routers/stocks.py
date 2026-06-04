@@ -232,37 +232,40 @@ def get_sectors():
 
 
 @router.get("/indices")
-async def get_indices():
-    """Retourne les cotations des principaux indices boursiers."""
-    import asyncio
+def get_indices():
+    """Retourne les cotations des principaux indices boursiers.
+    Utilise /v8/finance/chart (même que get_live_quote) — fonctionne sur IPs cloud.
+    /v8/finance/quote est bloqué sur Render."""
+    from services.yahoo_finance import get_live_quote
+    from concurrent.futures import ThreadPoolExecutor, as_completed
 
-    async def fetch_index(name: str, symbol: str) -> dict:
+    def fetch_one(name: str, symbol: str):
         try:
-            url = "https://query1.finance.yahoo.com/v8/finance/quote"
-            async with httpx.AsyncClient(headers=HEADERS) as client:
-                r = await client.get(
-                    url,
-                    params={"symbols": symbol, "fields": "regularMarketPrice,regularMarketChangePercent,regularMarketChange,marketState"},
-                    timeout=6,
-                )
-            result = r.json().get("quoteResponse", {}).get("result", [])
-            if not result:
+            q = get_live_quote(symbol)
+            if not q.get("price"):
                 return None
-            q = result[0]
-            market_state = q.get("marketState", "CLOSED")
             return {
                 "name":         name,
                 "symbol":       symbol,
-                "price":        round(q.get("regularMarketPrice", 0), 2),
-                "change_pct":   round(q.get("regularMarketChangePercent", 0), 2),
-                "change":       round(q.get("regularMarketChange", 0), 2),
-                "market_state": market_state,
-                "is_open":      market_state == "REGULAR",
+                "price":        q.get("price", 0),
+                "change_pct":   q.get("change_pct", 0) or 0,
+                "change":       q.get("change", 0) or 0,
+                "market_state": q.get("market_state", "CLOSED"),
+                "is_open":      q.get("is_open", False),
             }
         except Exception as e:
             print(f"[INDEX ERROR] {name}: {e}")
             return None
 
-    tasks   = [fetch_index(name, sym) for name, sym in INDICES.items()]
-    results = await asyncio.gather(*tasks)
-    return [r for r in results if r is not None]
+    results = []
+    with ThreadPoolExecutor(max_workers=len(INDICES)) as pool:
+        futures = {pool.submit(fetch_one, name, sym): name for name, sym in INDICES.items()}
+        for future in as_completed(futures):
+            r = future.result()
+            if r:
+                results.append(r)
+
+    # Trier dans l'ordre original
+    order = list(INDICES.keys())
+    results.sort(key=lambda x: order.index(x["name"]) if x["name"] in order else 99)
+    return results
