@@ -1,5 +1,5 @@
 import { useState, useEffect } from 'react'
-import { useQuery } from '@tanstack/react-query'
+import { useQuery, useQueryClient } from '@tanstack/react-query'
 import {
   BarChart2, Newspaper, Calculator, Sparkles,
   Activity, Menu, X, Monitor, Smartphone, RotateCcw,
@@ -30,7 +30,7 @@ import { useAuth }        from './hooks/useAuth'
 import { useWatchlist }   from './hooks/useWatchlist'
 import { usePortfolio }   from './hooks/usePortfolio'
 import { useLayout }      from './hooks/useLayout'
-import { getHistory, getIndicators, getQuote, getNews } from './services/api'
+import { getHistory, getIndicators, getQuote, getNews, getIndices, getGeoEvents, getTopSectors, getGameOfDay, pingBackend } from './services/api'
 import { Logo } from './components/Logo'
 
 // ── Vues globales (pas liées à une valeur) ────────────────────────────────────
@@ -93,6 +93,7 @@ export default function App() {
   const [searchOpen,   setSearchOpen]   = useState(false)
   const [showIntraday, setShowIntraday] = useState(false)
 
+  const queryClient = useQueryClient()
   const { user }                                         = useAuth()
   const { items: watchlistItems, addItem, removeItem }   = useWatchlist(user)
   const { positions, addPosition, removePosition }       = usePortfolio(user)
@@ -102,6 +103,7 @@ export default function App() {
     queryKey: ['quote', symbol],
     queryFn:  () => getQuote(symbol),
     refetchInterval: 30000,
+    refetchOnWindowFocus: false,
   })
   const { data: candles = [] } = useQuery({
     queryKey: ['history', symbol, period],
@@ -116,10 +118,22 @@ export default function App() {
     queryKey: ['news', symbol],
     queryFn:  () => getNews(symbol),
     staleTime: 5 * 60 * 1000,
+    refetchOnWindowFocus: false,
   })
 
   useEffect(() => { setActiveTab('chart'); setShowIntraday(false) }, [symbol])
   useEffect(() => { if (!isMobile) setSidebarOpen(false) }, [isMobile])
+
+  // Keep-alive + prefetch données dashboard au démarrage
+  useEffect(() => {
+    // Réveille le backend Render si dormant
+    pingBackend()
+    // Prefetch les données lentes en arrière-plan
+    queryClient.prefetchQuery({ queryKey: ['indices'],     queryFn: getIndices,    staleTime: 0 })
+    queryClient.prefetchQuery({ queryKey: ['geo-events'],  queryFn: getGeoEvents,  staleTime: 4 * 60 * 60 * 1000 })
+    queryClient.prefetchQuery({ queryKey: ['top-sectors'], queryFn: getTopSectors, staleTime: 30 * 60 * 1000 })
+    queryClient.prefetchQuery({ queryKey: ['game'],        queryFn: getGameOfDay,  staleTime: 60 * 60 * 1000 })
+  }, [])
 
   // Raccourci ⌘K
   useEffect(() => {

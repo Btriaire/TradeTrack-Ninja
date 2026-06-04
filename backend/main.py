@@ -1,5 +1,6 @@
 from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
+from fastapi.middleware.gzip import GZipMiddleware
 from dotenv import load_dotenv
 from pathlib import Path
 
@@ -22,6 +23,7 @@ app.add_middleware(
     allow_methods=["*"],
     allow_headers=["*"],
 )
+app.add_middleware(GZipMiddleware, minimum_size=500)
 
 app.include_router(stocks.router)
 app.include_router(news.router)
@@ -38,6 +40,34 @@ def root():
 @app.get("/health")
 def health():
     return {"status": "healthy"}
+
+
+@app.get("/ping")
+def ping():
+    """Keep-alive endpoint — frontend l'appelle au chargement pour réveiller Render."""
+    return {"pong": True}
+
+
+@app.on_event("startup")
+def warmup_cache():
+    """
+    Pré-chauffe le cache au démarrage pour que la première vraie requête
+    soit rapide même après un cold-start Render.
+    """
+    import threading
+    from services.yahoo_finance import get_batch_quotes
+    from services.signal_engine import UNIVERSE
+
+    def _warm():
+        try:
+            symbols = [s["symbol"] for s in UNIVERSE[:15]]
+            get_batch_quotes(symbols)
+            print(f"[WARMUP] {len(symbols)} symboles pré-chargés")
+        except Exception as e:
+            print(f"[WARMUP] Erreur: {e}")
+
+    # En arrière-plan pour ne pas bloquer le démarrage
+    threading.Thread(target=_warm, daemon=True).start()
 
 
 @app.get("/debug/env")

@@ -171,6 +171,83 @@ def get_quote(symbol: str) -> dict:
         return {"symbol": symbol, "price": None, "error": str(e)}
 
 
+def get_batch_quotes(symbols: list) -> dict:
+    """
+    Récupère les cotations de plusieurs symboles en UN SEUL appel HTTP.
+    ~40x plus rapide que des appels individuels pour la page Marchés.
+    Utilise /v8/finance/quote (même endpoint que les indices — fonctionnel sur IPs cloud).
+    """
+    if not symbols:
+        return {}
+
+    # Séparer ce qui est déjà en cache
+    result: dict = {}
+    missing: list = []
+    for s in symbols:
+        cached = _cached(f"quote:{s}")
+        if cached is not None:
+            result[s] = cached
+        else:
+            missing.append(s)
+
+    if not missing:
+        return result
+
+    # Batch par chunks de 20 (limite sécurisée Yahoo)
+    CHUNK = 20
+    for i in range(0, len(missing), CHUNK):
+        chunk = missing[i:i + CHUNK]
+        url   = "https://query1.finance.yahoo.com/v8/finance/quote"
+        try:
+            r = httpx.get(
+                url,
+                params={
+                    "symbols": ",".join(chunk),
+                    "fields":  (
+                        "regularMarketPrice,regularMarketChange,"
+                        "regularMarketChangePercent,regularMarketVolume,"
+                        "regularMarketPreviousClose,currency,shortName"
+                    ),
+                },
+                headers=HEADERS,
+                timeout=10,
+                follow_redirects=True,
+            )
+            items = r.json().get("quoteResponse", {}).get("result", [])
+            for item in items:
+                sym   = item.get("symbol")
+                if not sym:
+                    continue
+                price = _clean(item.get("regularMarketPrice"))
+                prev  = _clean(item.get("regularMarketPreviousClose"))
+                pct   = _clean(item.get("regularMarketChangePercent"))
+                chg   = _clean(item.get("regularMarketChange"))
+                vol   = item.get("regularMarketVolume")
+                q = {
+                    "symbol":     sym,
+                    "price":      price,
+                    "prev_close": prev,
+                    "change":     chg,
+                    "change_pct": round(pct, 2) if pct is not None else None,
+                    "volume":     vol,
+                    "market_cap": None,
+                    "currency":   item.get("currency", "EUR"),
+                    "sparkline":  [],   # non disponible en batch — chargé lazily
+                }
+                _store(f"quote:{sym}", q)
+                result[sym] = q
+        except Exception as e:
+            print(f"[BATCH QUOTES] chunk {chunk[:3]}… erreur: {e}")
+            # Fallback: individual calls for failed chunks
+            for s in chunk:
+                try:
+                    result[s] = get_quote(s)
+                except Exception:
+                    result[s] = {"symbol": s, "price": None}
+
+    return result
+
+
 # ── Live quote (cache 8s, intervalle 2m) ─────────────────────────────────────
 _live_cache: dict = {}
 LIVE_TTL = 8   # secondes — fraîcheur maximale sans spammer Yahoo

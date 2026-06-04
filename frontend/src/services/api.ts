@@ -104,3 +104,9 @@ export const analyzeClotureIA = (payload: {
   sector_perf: object
   market_date: string
 }) => api.post('/analysis/cloture', payload).then(r => r.data)
+
+export const pingBackend = () =>
+  api.get('/ping').catch(() => null)   // silencieux si le backend dort encore
+
+export const getBatchQuotes = (symbols: string[]) =>
+  api.get('/stocks/batch-quotes', { params: { symbols: symbols.join(',') } }).then(r => r.data)

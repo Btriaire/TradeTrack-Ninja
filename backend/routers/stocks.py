@@ -159,12 +159,15 @@ def get_markets():
     """Retourne toutes les valeurs de l'univers avec leurs cotations.
     Utilise get_quote (basé sur /chart, prouvé fonctionnel sur Render)."""
     from services.signal_engine import UNIVERSE
-    from services.yahoo_finance import get_quote
-    from concurrent.futures import ThreadPoolExecutor
+    from services.yahoo_finance import get_batch_quotes
 
-    def fetch_one(stock: dict) -> dict:
-        q = get_quote(stock["symbol"])
-        return {
+    symbols = [s["symbol"] for s in UNIVERSE]
+    batch   = get_batch_quotes(symbols)
+    results = []
+    for stock in UNIVERSE:
+        sym = stock["symbol"]
+        q   = batch.get(sym, {})
+        results.append({
             **stock,
             "price":      q.get("price")      or 0,
             "change_pct": q.get("change_pct") or 0,
@@ -172,13 +175,10 @@ def get_markets():
             "market_cap": 0,
             "day_high":   0,
             "day_low":    0,
-        }
-
-    with ThreadPoolExecutor(max_workers=10) as ex:
-        results = list(ex.map(fetch_one, UNIVERSE))
+        })
 
     filled = sum(1 for r in results if r["price"] > 0)
-    print(f"[MARKETS] {filled}/{len(UNIVERSE)} cotations récupérées")
+    print(f"[MARKETS BATCH] {filled}/{len(UNIVERSE)} cotations récupérées")
     return results
 
 
@@ -186,8 +186,7 @@ def get_markets():
 def get_sectors():
     """Valeurs enrichies avec secteur, cotations et score pépite."""
     from services.signal_engine import UNIVERSE, _cache as sig_cache
-    from services.yahoo_finance import get_quote
-    from concurrent.futures import ThreadPoolExecutor
+    from services.yahoo_finance import get_batch_quotes
 
     # Construire la map des scores depuis le cache signaux
     score_map: dict = {}
@@ -201,30 +200,33 @@ def get_sectors():
             score_map[s["symbol"]] = s.get("score", 0)
             gem_sell.add(s["symbol"])
 
-    def fetch_one(stock: dict) -> dict:
-        q = get_quote(stock["symbol"])
-        pct = q.get("change_pct") or 0
-        gem = None
-        if stock["symbol"] in gem_buy:
+    # Batch quotes en 1 seul appel
+    symbols   = [s["symbol"] for s in UNIVERSE]
+    batch     = get_batch_quotes(symbols)
+
+    results = []
+    for stock in UNIVERSE:
+        sym  = stock["symbol"]
+        q    = batch.get(sym, {})
+        pct  = q.get("change_pct") or 0
+        gem  = None
+        if sym in gem_buy:
             gem = "buy"
-        elif stock["symbol"] in gem_sell:
+        elif sym in gem_sell:
             gem = "sell"
         elif pct >= 3.0:
             gem = "momentum+"
         elif pct <= -4.0:
             gem = "dip"
-        return {
+        results.append({
             **stock,
             "price":      q.get("price")      or 0,
             "change_pct": pct,
             "volume":     q.get("volume")      or 0,
-            "score":      score_map.get(stock["symbol"], 0),
+            "score":      score_map.get(sym, 0),
             "gem":        gem,
             "sparkline":  q.get("sparkline", []),
-        }
-
-    with ThreadPoolExecutor(max_workers=10) as ex:
-        results = list(ex.map(fetch_one, UNIVERSE))
+        })
 
     return results
 
