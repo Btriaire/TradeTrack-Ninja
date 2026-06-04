@@ -1,7 +1,8 @@
-import { useState, useEffect, useRef } from 'react'
+import { useState, useEffect, useRef, useMemo } from 'react'
 import { useQuery } from '@tanstack/react-query'
-import { Search, X, Plus, BookmarkPlus } from 'lucide-react'
+import { Search, X, Plus, BookmarkPlus, Zap } from 'lucide-react'
 import { searchStocks } from '../services/api'
+import { calcLclFees, calcBreakeven } from '../utils/lcl-fees'
 import type { SearchResult, WatchlistItem, PortfolioPosition } from '../types'
 
 const MARKETS = [
@@ -34,10 +35,11 @@ export function SearchModal({
 }: Props) {
   const [query,  setQuery]  = useState('')
   const [market, setMarket] = useState('ALL')
-  const [adding, setAdding] = useState<string | null>(null)  // symbol en cours d'ajout portfolio
-  const [qty,    setQty]    = useState('1')
-  const [price,  setPrice]  = useState('')
-  const [fees,   setFees]   = useState('')
+  const [adding,    setAdding]    = useState<string | null>(null)
+  const [qty,       setQty]       = useState('1')
+  const [price,     setPrice]     = useState('')
+  const [feesAuto,  setFeesAuto]  = useState(true)
+  const [feesManual,setFeesManual]= useState('')
   const inputRef = useRef<HTMLInputElement>(null)
 
   useEffect(() => { inputRef.current?.focus() }, [])
@@ -70,17 +72,18 @@ export function SearchModal({
     e.stopPropagation()
     setAdding(r.symbol)
     setPrice('')
-    setFees('')
+    setFeesManual('')
+    setFeesAuto(true)
   }
 
-  const confirmAddPortfolio = (r: SearchResult) => {
+  const confirmAddPortfolio = (r: SearchResult, feesValue: number) => {
     onAddToPortfolio({
       symbol:    r.symbol,
       name:      r.name,
       quantity:  parseFloat(qty) || 1,
       buy_price: parseFloat(price) || 0,
       buy_date:  new Date().toISOString().split('T')[0],
-      fees:      parseFloat(fees) || 0,
+      fees:      feesValue > 0 ? feesValue : undefined,
     })
     setAdding(null)
   }
@@ -180,60 +183,94 @@ export function SearchModal({
               </div>
 
               {/* Formulaire ajout portfolio inline */}
-              {adding === r.symbol && (
-                <div className="px-4 py-3 bg-dark-700/60 border-b border-dark-600">
-                  <div className="text-xs text-slate-400 mb-2 font-semibold">Ajouter au portfolio</div>
-                  <div className="flex items-center gap-2 flex-wrap">
-                    <div className="flex flex-col gap-0.5">
-                      <span className="text-[10px] text-slate-600 uppercase tracking-wider">Quantité</span>
-                      <input
-                        type="number" min="0.001" step="0.001"
-                        value={qty} onChange={e => setQty(e.target.value)}
-                        placeholder="1"
-                        className="w-20 bg-dark-600 text-white text-xs rounded-lg px-2 py-1.5 outline-none border border-dark-500 focus:border-accent-blue"
-                      />
+              {adding === r.symbol && (() => {
+                const q2 = parseFloat(qty) || 0
+                const p2 = parseFloat(price) || 0
+                const lcl2 = calcLclFees(r.symbol, q2, p2)
+                const feesVal = feesAuto ? lcl2.total : (parseFloat(feesManual) || 0)
+                const totalCost2 = q2 * p2 + feesVal
+                const bk = calcBreakeven(p2, q2, feesVal)
+                return (
+                  <div className="px-4 py-3 bg-dark-700/60 border-b border-dark-600 space-y-2">
+                    <div className="text-xs text-slate-400 font-semibold">Ajouter au portfolio</div>
+
+                    {/* Qté + Prix */}
+                    <div className="flex gap-2 flex-wrap">
+                      <div className="flex flex-col gap-0.5">
+                        <span className="text-[10px] text-slate-600 uppercase tracking-wider">Quantité</span>
+                        <input type="number" min="0.001" step="0.001" value={qty}
+                          onChange={e => setQty(e.target.value)} placeholder="1"
+                          className="w-20 bg-dark-600 text-white text-xs rounded-lg px-2 py-1.5 outline-none border border-dark-500 focus:border-accent-blue font-mono" />
+                      </div>
+                      <div className="flex flex-col gap-0.5">
+                        <span className="text-[10px] text-slate-600 uppercase tracking-wider">Prix achat (€)</span>
+                        <input type="number" min="0" step="0.01" value={price}
+                          onChange={e => setPrice(e.target.value)} placeholder="0.00"
+                          className="w-28 bg-dark-600 text-white text-xs rounded-lg px-2 py-1.5 outline-none border border-dark-500 focus:border-accent-blue font-mono" />
+                      </div>
                     </div>
-                    <div className="flex flex-col gap-0.5">
-                      <span className="text-[10px] text-slate-600 uppercase tracking-wider">Prix achat</span>
-                      <input
-                        type="number" min="0" step="0.01"
-                        value={price} onChange={e => setPrice(e.target.value)}
-                        placeholder="0.00 €"
-                        className="w-28 bg-dark-600 text-white text-xs rounded-lg px-2 py-1.5 outline-none border border-dark-500 focus:border-accent-blue"
-                      />
+
+                    {/* Frais LCL auto */}
+                    <div className="bg-dark-600/60 rounded-lg border border-dark-500 overflow-hidden">
+                      <div className="flex items-center justify-between px-3 py-1.5 border-b border-dark-500">
+                        <div className="flex items-center gap-1.5">
+                          <Zap size={10} className="text-amber-400" />
+                          <span className="text-[10px] font-semibold text-slate-300">Frais LCL Bourse</span>
+                        </div>
+                        <button onClick={() => setFeesAuto(v => !v)}
+                          className={`text-[9px] px-2 py-0.5 rounded font-mono transition-colors ${
+                            feesAuto ? 'bg-amber-500/20 text-amber-400' : 'bg-dark-500 text-slate-500'
+                          }`}>
+                          {feesAuto ? '⚡ Auto' : '✏️ Manuel'}
+                        </button>
+                      </div>
+                      {feesAuto && q2 > 0 && p2 > 0 ? (
+                        <div className="px-3 py-1.5 text-[10px] font-mono space-y-0.5">
+                          <div className="flex justify-between text-slate-500"><span>Courtage</span><span>{lcl2.courtage.toFixed(2)} €</span></div>
+                          {lcl2.ttf > 0 && <div className="flex justify-between text-slate-500"><span>TTF (0,30% FR)</span><span>{lcl2.ttf.toFixed(2)} €</span></div>}
+                          {lcl2.stampDuty > 0 && <div className="flex justify-between text-slate-500"><span>Stamp UK (0,50%)</span><span>{lcl2.stampDuty.toFixed(2)} €</span></div>}
+                          <div className="flex justify-between font-bold text-amber-400 border-t border-dark-500 pt-0.5 mt-0.5">
+                            <span>Total frais</span><span>{lcl2.total.toFixed(2)} €</span>
+                          </div>
+                        </div>
+                      ) : feesAuto ? (
+                        <div className="px-3 py-1.5 text-[10px] text-slate-600 font-mono">Saisissez qté + prix</div>
+                      ) : (
+                        <div className="px-3 py-1.5">
+                          <input type="number" min="0" step="0.01" value={feesManual}
+                            onChange={e => setFeesManual(e.target.value)} placeholder="Frais réels (€)"
+                            className="w-full bg-dark-500 text-white text-xs rounded px-2 py-1 outline-none border border-dark-400 focus:border-amber-500 font-mono" />
+                        </div>
+                      )}
                     </div>
-                    <div className="flex flex-col gap-0.5">
-                      <span className="text-[10px] text-slate-600 uppercase tracking-wider">Frais courtage</span>
-                      <input
-                        type="number" min="0" step="0.01"
-                        value={fees} onChange={e => setFees(e.target.value)}
-                        placeholder="0.00 €"
-                        className="w-24 bg-dark-600 text-white text-xs rounded-lg px-2 py-1.5 outline-none border border-dark-500 focus:border-amber-500"
-                      />
-                    </div>
-                    <div className="flex items-end gap-2 pb-0">
-                      <button
-                        onClick={() => confirmAddPortfolio(r)}
-                        className="bg-green-500/20 text-green-400 hover:bg-green-500/30 text-xs px-3 py-1.5 rounded-lg transition-colors font-semibold mt-4"
-                      >
+
+                    {/* Récap + seuil */}
+                    {q2 > 0 && p2 > 0 && (
+                      <div className="flex gap-2 text-[10px] font-mono">
+                        <div className="flex-1 bg-dark-600/50 rounded px-2 py-1.5">
+                          <div className="text-slate-600">Coût réel</div>
+                          <div className="text-white font-bold">{totalCost2.toFixed(2)} €</div>
+                        </div>
+                        <div className="flex-1 bg-dark-600/50 rounded px-2 py-1.5">
+                          <div className="text-slate-600">Seuil rentabilité</div>
+                          <div className="text-amber-400 font-bold">{bk > 0 ? bk.toFixed(2) + ' €' : '—'}</div>
+                        </div>
+                      </div>
+                    )}
+
+                    <div className="flex gap-2">
+                      <button onClick={() => confirmAddPortfolio(r, feesVal)}
+                        className="flex-1 bg-green-500/20 text-green-400 hover:bg-green-500/30 text-xs px-3 py-1.5 rounded-lg transition-colors font-semibold">
                         ✓ Confirmer
                       </button>
-                      <button
-                        onClick={() => setAdding(null)}
-                        className="text-slate-500 hover:text-white text-xs px-2 py-1.5 transition-colors mt-4"
-                      >
+                      <button onClick={() => setAdding(null)}
+                        className="text-slate-500 hover:text-white text-xs px-2 py-1.5 transition-colors">
                         Annuler
                       </button>
                     </div>
                   </div>
-                  {qty && price && (
-                    <div className="mt-2 text-[10px] text-slate-600 font-mono">
-                      Coût total : {((parseFloat(qty)||0)*(parseFloat(price)||0)+(parseFloat(fees)||0)).toFixed(2)} €
-                      {fees ? ` (dont ${fees} € de frais)` : ''}
-                    </div>
-                  )}
-                </div>
-              )}
+                )
+              })()}
             </div>
           ))}
         </div>
