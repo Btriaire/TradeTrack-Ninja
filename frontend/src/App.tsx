@@ -15,6 +15,7 @@ import { IndicesBar }    from './components/IndicesBar'
 import { SearchModal }   from './components/SearchModal'
 import { Portfolio }            from './components/Portfolio'
 import { StockPortfolioPanel }  from './components/StockPortfolioPanel'
+import { WelcomePage }          from './components/WelcomePage'
 import { TickerBanner }  from './components/TickerBanner'
 import { Dashboard }     from './components/Dashboard'
 
@@ -42,7 +43,7 @@ import { getHistory, getIndicators, getQuote, getNews, getIndices, getGeoEvents,
 import { Logo } from './components/Logo'
 
 // ── Vues globales (pas liées à une valeur) ────────────────────────────────────
-type GlobalView = 'dashboard' | 'stock' | 'markets' | 'signals' | 'news' | 'portfolio'
+type GlobalView = 'welcome' | 'dashboard' | 'stock' | 'markets' | 'signals' | 'news' | 'portfolio'
 
 const GLOBAL_VIEWS: { id: GlobalView; label: string; short: string; icon: any; desc: string }[] = [
   { id: 'dashboard', label: 'Dashboard',        short: 'Home',      icon: Activity,   desc: 'Vue d\'ensemble' },
@@ -98,7 +99,7 @@ export default function App() {
   const [symbol,       setSymbol]       = useState('MC.PA')
   const [period,       setPeriod]       = useState('6mo')
   const [activeTab,    setActiveTab]    = useState<StockTab>('chart')
-  const [globalView,   setGlobalView]   = useState<GlobalView>('dashboard')
+  const [globalView,   setGlobalView]   = useState<GlobalView>('welcome')
   const [sidebarOpen,  setSidebarOpen]  = useState(false)
   const [searchOpen,   setSearchOpen]   = useState(false)
   const [showIntraday, setShowIntraday] = useState(false)
@@ -204,7 +205,7 @@ export default function App() {
               <Menu size={18} />
             </button>
           )}
-          <button onClick={() => setGlobalView('dashboard')} className="flex items-center">
+          <button onClick={() => setGlobalView('welcome')} className="flex items-center">
             <Logo size={isMobile ? 26 : 32} showText={!isMobile} />
           </button>
         </div>
@@ -348,6 +349,16 @@ export default function App() {
         {/* ── Contenu principal ────────────────────────────────────────── */}
         <main className={`flex-1 overflow-y-auto space-y-3 min-w-0 ${isMobile ? 'p-3' : 'p-4'}`}>
           <Suspense fallback={<LazyFallback />}>
+
+          {/* ── Vue WELCOME ─────────────────────────────────────────── */}
+          {globalView === 'welcome' && (
+            <WelcomePage
+              positions={positions}
+              onNavigate={v => setGlobalView(v as GlobalView)}
+              onOpenSearch={() => setSearchOpen(true)}
+              onSelectSymbol={handleSelectSymbol}
+            />
+          )}
 
           {/* ── Vue DASHBOARD ───────────────────────────────────────── */}
           {globalView === 'dashboard' && (
