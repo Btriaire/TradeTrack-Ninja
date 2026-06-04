@@ -4,7 +4,7 @@ Service données financières — Yahoo Finance API directe (sans librairie yfin
 - Cache mémoire 30 min pour limiter les appels
 - Supporte tous les marchés : .PA, .DE, .L, .AS, US...
 """
-import httpx, math, time, pandas as pd
+import httpx, math, time, threading, pandas as pd
 from datetime import datetime
 from typing import Optional
 
@@ -27,6 +27,51 @@ def _cached(key: str):
 def _store(key: str, data):
     _cache[key] = (time.time(), data)
     return data
+
+# ── Déduplication des requêtes concurrentes (cache stampede prevention) ──────
+# Si 3 requêtes arrivent en même temps pour le même symbole, une seule fait
+# l'appel HTTP ; les 2 autres attendent qu'elle finisse puis lisent le cache.
+_inflight: dict[str, threading.Event] = {}
+_inflight_lock = threading.Lock()
+
+def _dedup_fetch(key: str, fetch_fn):
+    """
+    Exécute fetch_fn() en s'assurant qu'une seule requête tourne à la fois
+    pour ce cache key. Les autres threads attendent et lisent le cache résultant.
+    """
+    # Déjà en cache ?
+    cached = _cached(key)
+    if cached is not None:
+        return cached
+
+    with _inflight_lock:
+        # Double-check après acquisition du lock
+        cached = _cached(key)
+        if cached is not None:
+            return cached
+
+        # Quelqu'un est déjà en train de fetcher ce key ?
+        if key in _inflight:
+            evt = _inflight[key]
+        else:
+            evt = threading.Event()
+            _inflight[key] = evt
+            evt = None  # on est le premier → on fait le fetch
+
+    if evt is not None:
+        # Attendre que le premier thread finisse (max 15s)
+        evt.wait(timeout=15)
+        return _cached(key)
+
+    # On est le premier → fetch
+    try:
+        result = fetch_fn()
+        return result
+    finally:
+        with _inflight_lock:
+            done_evt = _inflight.pop(key, None)
+        if done_evt:
+            done_evt.set()
 
 # ── Headers qui ressemblent à un vrai navigateur ─────────────────────────────
 HEADERS = {

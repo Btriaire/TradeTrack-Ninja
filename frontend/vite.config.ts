@@ -13,4 +13,29 @@ export default defineConfig({
       },
     },
   },
+  build: {
+    // Augmente le seuil d'avertissement (les splits vendor sont intentionnellement grands)
+    chunkSizeWarningLimit: 600,
+    rollupOptions: {
+      output: {
+        // ── Vendor splitting : chaque lib dans son propre chunk ────────────
+        // Permet au navigateur de mettre en cache les librairies séparément
+        // et de ne re-télécharger que le code app en cas de mise à jour.
+        manualChunks: {
+          // React + DOM (ne change presque jamais)
+          'vendor-react': ['react', 'react-dom'],
+          // State management & queries (change peu)
+          'vendor-query': ['@tanstack/react-query'],
+          // Graphiques (lourd — ~250KB seul)
+          'vendor-charts': ['lightweight-charts'],
+          // Icônes (peut grossir)
+          'vendor-icons': ['lucide-react'],
+          // Firebase (auth + firestore)
+          'vendor-firebase': ['firebase/app', 'firebase/auth', 'firebase/firestore'],
+          // Utilitaires
+          'vendor-misc': ['axios', 'clsx'],
+        },
+      },
+    },
+  },
 })

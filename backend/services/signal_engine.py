@@ -1,9 +1,15 @@
 """
 Moteur de signaux quotidiens — scoring technique + narrative IA
 Analyse ~40 valeurs majeures (CAC40, DAX, S&P500, UK) toutes les 6h.
+
+Optimisations Phase 3 :
+- ThreadPoolExecutor max_workers=12 (était 6)
+- as_completed() au lieu d'itérer les futures en order de soumission
+- Cache disque /tmp (survit aux cold-starts Render dans la même session)
+- Warmup déclenché au démarrage via main.py
 """
-import time, asyncio
-from concurrent.futures import ThreadPoolExecutor
+import time, pickle, os
+from concurrent.futures import ThreadPoolExecutor, as_completed
 from services.yahoo_finance import get_history, get_indicators, get_quote
 
 # ── Univers de valeurs à analyser ─────────────────────────────────────────────
@@ -55,9 +61,37 @@ UNIVERSE = [
     {"symbol": "PHIA.AS", "name": "Philips",           "index": "AEX",      "country": "🇳🇱", "sector": "Santé"},
 ]
 
-# ── Cache ─────────────────────────────────────────────────────────────────────
+# ── Cache mémoire + disque ─────────────────────────────────────────────────────
 _cache: dict = {"ts": 0, "data": None, "generating": False}
-CACHE_TTL = 6 * 3600  # 6 heures
+CACHE_TTL    = 6 * 3600          # 6 heures
+DISK_CACHE   = "/tmp/signals_cache.pkl"   # Render /tmp persiste dans la session
+
+
+def _load_disk_cache() -> dict | None:
+    """Charge le cache disque si récent (< 6h)."""
+    try:
+        if not os.path.exists(DISK_CACHE):
+            return None
+        age = time.time() - os.path.getmtime(DISK_CACHE)
+        if age > CACHE_TTL:
+            return None
+        with open(DISK_CACHE, "rb") as f:
+            data = pickle.load(f)
+        print(f"[SIGNALS] Cache disque chargé ({age/60:.0f} min)")
+        return data
+    except Exception as e:
+        print(f"[SIGNALS] Erreur lecture cache disque: {e}")
+        return None
+
+
+def _save_disk_cache(data: dict):
+    """Sauvegarde le résultat sur disque."""
+    try:
+        with open(DISK_CACHE, "wb") as f:
+            pickle.dump(data, f)
+        print(f"[SIGNALS] Cache disque sauvegardé → {DISK_CACHE}")
+    except Exception as e:
+        print(f"[SIGNALS] Erreur écriture cache disque: {e}")
 
 
 def _score_stock(stock: dict) -> dict | None:
@@ -73,8 +107,8 @@ def _score_stock(stock: dict) -> dict | None:
 
         price  = quote["price"]
         score  = 0.0
-        tags   = []   # raisons courtes pour l'UI
-        detail = []   # détail pour le prompt IA
+        tags   = []
+        detail = []
 
         rsi        = indicators.get("rsi", 50) or 50
         macd       = indicators.get("macd", 0) or 0
@@ -132,10 +166,8 @@ def _score_stock(stock: dict) -> dict | None:
 
         # ── Estimation potentiel ──────────────────────────────────────────────
         if score > 0 and bb_upper and price:
-            # Potentiel haussier = distance vers BB supérieure
             potential_pct = round((bb_upper - price) / price * 100, 1)
         elif score < 0 and bb_lower and price:
-            # Potentiel baissier = distance vers BB inférieure
             potential_pct = round((price - bb_lower) / price * 100 * -1, 1)
         else:
             potential_pct = 0.0
@@ -150,22 +182,22 @@ def _score_stock(stock: dict) -> dict | None:
             horizon = "5-10 jours"
 
         return {
-            "symbol":       sym,
-            "name":         stock["name"],
-            "index":        stock["index"],
-            "country":      stock["country"],
-            "sector":       stock.get("sector", "Autre"),
-            "price":        round(price, 2),
-            "change_pct":   quote.get("change_pct") or 0.0,
-            "perf_5j":      round(perf5, 2),
-            "score":        round(score, 2),
-            "rsi":          round(rsi, 1),
-            "tags":         tags[:3],
-            "detail":       detail,
-            "potential_pct":potential_pct,
-            "horizon":      horizon,
-            "signal":       indicators.get("signal", "NEUTRE"),
-            "reason":       "",   # rempli par l'IA après
+            "symbol":        sym,
+            "name":          stock["name"],
+            "index":         stock["index"],
+            "country":       stock["country"],
+            "sector":        stock.get("sector", "Autre"),
+            "price":         round(price, 2),
+            "change_pct":    quote.get("change_pct") or 0.0,
+            "perf_5j":       round(perf5, 2),
+            "score":         round(score, 2),
+            "rsi":           round(rsi, 1),
+            "tags":          tags[:3],
+            "detail":        detail,
+            "potential_pct": potential_pct,
+            "horizon":       horizon,
+            "signal":        indicators.get("signal", "NEUTRE"),
+            "reason":        "",
         }
     except Exception as e:
         print(f"[SIGNAL] {sym}: {e}")
@@ -173,56 +205,94 @@ def _score_stock(stock: dict) -> dict | None:
 
 
 def compute_signals() -> dict:
-    """Calcule les signaux pour tout l'univers (synchrone, appelé en thread)."""
+    """
+    Calcule les signaux pour tout l'univers.
+
+    FIX Phase 3 :
+    - max_workers=12 (était 6) → 40 stocks en ~4 batches au lieu de ~7
+    - as_completed() → on traite chaque résultat dès qu'il arrive,
+      sans attendre les plus lents pour passer au suivant
+    """
+    t0 = time.time()
     scored = []
-    with ThreadPoolExecutor(max_workers=6) as ex:
-        futures = {ex.submit(_score_stock, s): s for s in UNIVERSE}
-        for future in futures:
+
+    with ThreadPoolExecutor(max_workers=12) as executor:
+        future_to_stock = {executor.submit(_score_stock, s): s for s in UNIVERSE}
+        for future in as_completed(future_to_stock):
             res = future.result()
             if res:
                 scored.append(res)
 
+    elapsed = time.time() - t0
+    print(f"[SIGNALS] compute_signals: {len(scored)}/{len(UNIVERSE)} en {elapsed:.1f}s")
+
     scored.sort(key=lambda x: x["score"], reverse=True)
 
-    # Seuil adaptatif : essaie >= 2, replie sur >= 1, puis prend le top 3
+    # Seuil adaptatif
     great_catch = [s for s in scored if s["score"] >= 2.0][:6]
     if len(great_catch) < 3:
         great_catch = [s for s in scored if s["score"] >= 1.0][:6]
     if len(great_catch) < 3:
-        great_catch = scored[:3]  # toujours au moins 3
+        great_catch = scored[:3]
 
-    stay_neg    = [s for s in scored if s["score"] <= -2.0]
-    stay_away   = list(reversed(stay_neg))[:6]
+    stay_neg  = [s for s in scored if s["score"] <= -2.0]
+    stay_away = list(reversed(stay_neg))[:6]
     if len(stay_away) < 3:
         stay_neg2 = [s for s in scored if s["score"] <= -1.0]
         stay_away = list(reversed(stay_neg2))[:6]
     if len(stay_away) < 3:
-        stay_away = list(reversed(scored[-3:]))  # toujours les 3 pires
+        stay_away = list(reversed(scored[-3:]))
 
     return {
-        "great_catch": great_catch,
-        "stay_away":   stay_away,
-        "all_scores":  scored,
-        "generated_at": time.strftime("%Y-%m-%dT%H:%M:%SZ", time.gmtime()),
+        "great_catch":   great_catch,
+        "stay_away":     stay_away,
+        "all_scores":    scored,
+        "generated_at":  time.strftime("%Y-%m-%dT%H:%M:%SZ", time.gmtime()),
         "universe_size": len(scored),
     }
 
 
 def get_signals_cached() -> dict:
-    """Retourne les signaux depuis le cache, ou calcule si expiré."""
+    """
+    Retourne les signaux depuis le cache (mémoire → disque → calcul).
+    Priorité : RAM > /tmp/signals_cache.pkl > compute_signals()
+    """
     now = time.time()
+
+    # 1. Cache mémoire frais ?
     if _cache["data"] and (now - _cache["ts"]) < CACHE_TTL:
         return _cache["data"]
 
+    # 2. Calcul déjà en cours → retourner stale ou vide
     if _cache["generating"]:
-        # Calcul en cours → retourner ancien cache ou vide
         return _cache["data"] or {"great_catch": [], "stay_away": [], "generating": True}
 
+    # 3. Cache disque disponible ?
+    disk = _load_disk_cache()
+    if disk:
+        _cache["data"] = disk
+        _cache["ts"]   = time.time()
+        return disk
+
+    # 4. Calcul complet
     _cache["generating"] = True
     try:
         data = compute_signals()
         _cache["data"] = data
         _cache["ts"]   = time.time()
+        _save_disk_cache(data)
         return data
     finally:
         _cache["generating"] = False
+
+
+def warmup_signals_async():
+    """Déclenche le pré-calcul en arrière-plan (appelé au démarrage)."""
+    import threading
+
+    def _run():
+        print("[SIGNALS] Pré-calcul en arrière-plan…")
+        get_signals_cached()
+        print("[SIGNALS] Pré-calcul terminé.")
+
+    threading.Thread(target=_run, daemon=True).start()

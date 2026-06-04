@@ -51,23 +51,27 @@ def ping():
 @app.on_event("startup")
 def warmup_cache():
     """
-    Pré-chauffe le cache au démarrage pour que la première vraie requête
-    soit rapide même après un cold-start Render.
+    Pré-chauffe le cache au démarrage :
+    1. Batch quotes sur les 15 premiers symboles (rapide, ~1-2s)
+    2. Pré-calcul des signaux en arrière-plan (lent mais non-bloquant)
     """
     import threading
     from services.yahoo_finance import get_batch_quotes
-    from services.signal_engine import UNIVERSE
+    from services.signal_engine import UNIVERSE, warmup_signals_async
 
-    def _warm():
+    def _warm_quotes():
         try:
             symbols = [s["symbol"] for s in UNIVERSE[:15]]
             get_batch_quotes(symbols)
-            print(f"[WARMUP] {len(symbols)} symboles pré-chargés")
+            print(f"[WARMUP] {len(symbols)} quotes pré-chargées")
         except Exception as e:
-            print(f"[WARMUP] Erreur: {e}")
+            print(f"[WARMUP] Erreur quotes: {e}")
 
-    # En arrière-plan pour ne pas bloquer le démarrage
-    threading.Thread(target=_warm, daemon=True).start()
+    # 1. Quotes en arrière-plan (rapide)
+    threading.Thread(target=_warm_quotes, daemon=True).start()
+
+    # 2. Signaux en arrière-plan (plus lent — lit le cache disque si dispo)
+    warmup_signals_async()
 
 
 @app.get("/debug/env")
