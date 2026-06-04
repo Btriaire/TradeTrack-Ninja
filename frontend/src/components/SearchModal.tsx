@@ -2,7 +2,7 @@ import { useState, useEffect, useRef, useMemo } from 'react'
 import { useQuery } from '@tanstack/react-query'
 import { Search, X, Plus, BookmarkPlus, Zap } from 'lucide-react'
 import { searchStocks } from '../services/api'
-import { calcLclFees, calcBreakeven } from '../utils/lcl-fees'
+import { calcLclFees, calcBreakeven, isPeaEligible } from '../utils/lcl-fees'
 import type { SearchResult, WatchlistItem, PortfolioPosition } from '../types'
 
 const MARKETS = [
@@ -158,6 +158,9 @@ export function SearchModal({
                       {TYPE_LABEL[r.type] ?? r.type}
                     </span>
                     <span className="text-xs text-slate-600">{r.exchange}</span>
+                    {isPeaEligible(r.symbol) && (
+                      <span className="text-[9px] font-bold bg-blue-500/20 text-blue-400 border border-blue-500/30 px-1.5 py-0.5 rounded font-mono tracking-wide">PEA</span>
+                    )}
                   </div>
                   <div className="text-xs text-slate-400 truncate mt-0.5">{r.name}</div>
                 </div>

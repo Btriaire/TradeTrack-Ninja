@@ -3,6 +3,38 @@
  * Ordres internet, compte-titres ordinaire (pas PEA, pas SRD)
  */
 
+/**
+ * Détermine si une valeur est éligible au PEA français.
+ * Règle simplifiée (applicable pour LCL PEA) :
+ *   - Actions de sociétés domiciliées dans l'UE / EEE sont éligibles
+ *   - UK (.L) exclue depuis le Brexit
+ *   - USA, Japon, etc. exclus
+ *   - ETF : seuls les ETF UCITS domiciliés dans l'UE sont éligibles
+ *     (on ne peut pas le savoir depuis le symbole seul → false par défaut)
+ */
+export function isPeaEligible(symbol: string): boolean {
+  const s = symbol.toUpperCase()
+  // Suffixes Euronext / marchés UE+EEE
+  const EU_SUFFIXES = [
+    '.PA',  // Euronext Paris (France)
+    '.DE',  // XETRA (Allemagne)
+    '.AS',  // Euronext Amsterdam (Pays-Bas)
+    '.BE',  // Euronext Bruxelles (Belgique)
+    '.MI',  // Borsa Italiana (Italie)
+    '.MC',  // Bolsa de Madrid (Espagne)
+    '.LS',  // Euronext Lisbonne (Portugal)
+    '.HE',  // Helsinki (Finlande)
+    '.ST',  // Stockholm (Suède)
+    '.CO',  // Copenhague (Danemark)
+    '.OL',  // Oslo (Norvège)
+    '.VI',  // Vienne (Autriche)
+    '.WA',  // Varsovie (Pologne)
+    '.PR',  // Prague (Tchéquie)
+    '.BD',  // Budapest (Hongrie)
+  ]
+  return EU_SUFFIXES.some(sfx => s.endsWith(sfx))
+}
+
 export interface LclFeeBreakdown {
   courtage:     number   // frais de courtage
   ttf:          number   // taxe sur transactions financières (0.3% actions FR)

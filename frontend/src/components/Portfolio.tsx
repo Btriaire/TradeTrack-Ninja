@@ -5,6 +5,7 @@ import {
   ChevronDown, ChevronUp, Undo2, ChevronRight, Receipt,
 } from 'lucide-react'
 import { getQuote } from '../services/api'
+import { isPeaEligible } from '../utils/lcl-fees'
 import type { PortfolioPosition } from '../types'
 
 // ── Helpers ────────────────────────────────────────────────────────────────────
@@ -102,8 +103,11 @@ function PositionRow({
           onClick={() => onSelect(pos.symbol)}
         >
           {/* Ligne 1 : symbole + nom */}
-          <div className="flex items-baseline gap-2">
+          <div className="flex items-center gap-2 flex-wrap">
             <span className="text-base font-bold text-white font-mono leading-none">{pos.symbol}</span>
+            {isPeaEligible(pos.symbol) && (
+              <span className="text-[9px] font-bold bg-blue-500/20 text-blue-400 border border-blue-500/30 px-1.5 py-0.5 rounded font-mono tracking-wide leading-none">PEA</span>
+            )}
             <span className="text-xs text-slate-500 truncate max-w-[140px] leading-none">{pos.name}</span>
           </div>
 

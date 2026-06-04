@@ -2,6 +2,7 @@ import { useState } from 'react'
 import { useQuery } from '@tanstack/react-query'
 import { Plus, X, TrendingUp, TrendingDown, Briefcase, Eye } from 'lucide-react'
 import { getQuote } from '../services/api'
+import { isPeaEligible } from '../utils/lcl-fees'
 import type { WatchlistItem, PortfolioPosition } from '../types'
 
 interface Props {
@@ -42,8 +43,11 @@ function QuoteRow({
     >
       <div className="min-w-0 flex-1">
         <div className="text-sm font-semibold text-white truncate leading-tight">{name}</div>
-        <div className="flex items-center gap-1.5 mt-0.5">
+        <div className="flex items-center gap-1.5 mt-0.5 flex-wrap">
           <span className="text-xs text-slate-500 font-mono">{symbol}</span>
+          {isPeaEligible(symbol) && (
+            <span className="text-[8px] font-bold bg-blue-500/20 text-blue-400 border border-blue-500/30 px-1 py-0.5 rounded font-mono tracking-wide leading-none">PEA</span>
+          )}
           {extraBadge}
         </div>
       </div>

@@ -377,13 +377,18 @@ export default function App() {
 
           {/* ── Vue PORTFOLIO ───────────────────────────────────────── */}
           {globalView === 'portfolio' && (
-            <Portfolio
-              positions={positions}
-              onRemove={removePosition}
-              onSelect={handleSelectSymbol}
-              onOpenSearch={() => setSearchOpen(true)}
-              user={user}
-            />
+            <>
+              <Portfolio
+                positions={positions}
+                onRemove={removePosition}
+                onSelect={handleSelectSymbol}
+                onOpenSearch={() => setSearchOpen(true)}
+                user={user}
+              />
+              <Suspense fallback={<LazyFallback />}>
+                <OrderSimulator symbol="" currentPrice={undefined} />
+              </Suspense>
+            </>
           )}
 
           {/* ── Vue VALEUR (stock-specific) ─────────────────────────── */}
