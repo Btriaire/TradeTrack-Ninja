@@ -7,6 +7,7 @@ Service données financières — Yahoo Finance API directe (sans librairie yfin
 import httpx, math, time, threading, pandas as pd
 from datetime import datetime
 from typing import Optional
+from zoneinfo import ZoneInfo, ZoneInfoNotFoundError
 
 try:
     import ta
@@ -91,6 +92,82 @@ PERIOD_TO_RANGE = {
     "1mo": "1mo", "3mo": "3mo", "6mo": "6mo",
     "1y":  "1y",  "2y":  "2y",  "5y":  "5y",
 }
+
+# ── Heures de trading par fuseau (heure locale, lundi-vendredi) ──────────────
+# Format : liste de (open_minutes, close_minutes) depuis minuit
+_TRADING_HOURS: dict[str, list[tuple[int, int]]] = {
+    "America/New_York":    [(570, 960)],         # 9h30-16h00 ET
+    "America/Chicago":     [(570, 960)],          # CME (ajuste à la NY)
+    "America/Los_Angeles": [(390, 780)],          # 6h30-13h PT (suit NY)
+    "Europe/Paris":        [(540, 1050)],         # 9h00-17h30 CET/CEST
+    "Europe/Berlin":       [(540, 1050)],
+    "Europe/Amsterdam":    [(540, 1050)],
+    "Europe/Brussels":     [(540, 1050)],
+    "Europe/Madrid":       [(540, 1050)],
+    "Europe/Milan":        [(540, 1050)],
+    "Europe/Lisbon":       [(540, 1050)],
+    "Europe/Zurich":       [(540, 1050)],
+    "Europe/Stockholm":    [(540, 1050)],
+    "Europe/Oslo":         [(540, 1050)],
+    "Europe/Copenhagen":   [(540, 1050)],
+    "Europe/Helsinki":     [(540, 1050)],
+    "Europe/Warsaw":       [(540, 1050)],
+    "Europe/Vienna":       [(540, 1050)],
+    "Europe/London":       [(480, 990)],          # 8h00-16h30 GMT/BST
+    "Europe/Dublin":       [(480, 990)],
+    "Asia/Tokyo":          [(540, 690), (750, 930)],  # 9h-11h30 + 12h30-15h30 JST
+    "Asia/Seoul":          [(540, 900)],          # 9h-15h KST
+    "Asia/Shanghai":       [(570, 690), (780, 900)],  # 9h30-11h30 + 13h-15h CST
+    "Asia/Hong_Kong":      [(570, 720), (780, 960)],  # 9h30-12h + 13h-16h HKT
+    "Asia/Singapore":      [(540, 720), (810, 990)],
+    "Australia/Sydney":    [(600, 990)],          # 10h-16h30 AEST
+    "America/Sao_Paulo":   [(600, 1050)],         # 10h-17h30 BRT
+}
+
+def _infer_market_state(meta: dict) -> str:
+    """
+    Infère l'état du marché depuis le timezone de l'exchange.
+    Yahoo Finance /chart ne retourne pas 'marketState' dans le meta.
+    Fallback: âge de regularMarketTime si timezone inconnu.
+    """
+    tz_name = meta.get("exchangeTimezoneName", "")
+    rmt     = meta.get("regularMarketTime", 0)
+    now_ts  = time.time()
+
+    # ── Fallback rapide : si la dernière cotation est < 3 min → OUVERT ──────
+    # (fiable pour interval=2m — si une transaction vient d'avoir lieu)
+    age_min = (now_ts - rmt) / 60 if rmt else 9999
+    if age_min < 3:
+        return "REGULAR"
+
+    # ── Inférence par fuseau horaire ─────────────────────────────────────────
+    try:
+        tz = ZoneInfo(tz_name)
+    except (ZoneInfoNotFoundError, Exception):
+        # Timezone inconnu → fallback âge
+        return "REGULAR" if age_min < 8 else "CLOSED"
+
+    now_local = datetime.now(tz)
+    weekday   = now_local.weekday()   # 0=lundi, 5=sam, 6=dim
+
+    if weekday >= 5:
+        return "CLOSED"
+
+    t = now_local.hour * 60 + now_local.minute
+
+    slots = _TRADING_HOURS.get(tz_name)
+    if slots:
+        for open_m, close_m in slots:
+            if open_m <= t < close_m:
+                return "REGULAR"
+        # Vérifier pré/post pour US (America/New_York)
+        if tz_name.startswith("America/"):
+            if 240 <= t < 570:   return "PRE"   # 4h00-9h30
+            if 960 <= t < 1200:  return "POST"  # 16h00-20h00
+        return "CLOSED"
+
+    # ── Timezone connu mais pas dans notre table : fallback âge ──────────────
+    return "REGULAR" if age_min < 60 else "CLOSED"
 
 
 def _clean(val) -> Optional[float]:
@@ -323,7 +400,7 @@ def get_live_quote(symbol: str) -> dict:
         meta         = result[0].get("meta", {})
         price        = _clean(meta.get("regularMarketPrice"))
         prev         = _clean(meta.get("chartPreviousClose") or meta.get("previousClose"))
-        market_state = meta.get("marketState", "CLOSED")   # REGULAR | PRE | POST | CLOSED
+        market_state = _infer_market_state(meta)   # chart API n'expose pas marketState
         mkt_time     = meta.get("regularMarketTime")        # unix timestamp
 
         change, pct = None, None
@@ -485,7 +562,7 @@ def get_intraday(symbol: str, interval: str = "5m") -> dict:
             "symbol":       symbol,
             "interval":     interval,
             "candles":      candles,
-            "market_state": meta.get("marketState", "CLOSED"),
+            "market_state": _infer_market_state(meta),
             "session": {
                 "open":        round(session_open, 2)  if session_open else None,
                 "high":        round(session_high, 2)  if session_high else None,
