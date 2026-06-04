@@ -4,7 +4,7 @@ Service données financières — Yahoo Finance API directe (sans librairie yfin
 - Cache mémoire 30 min pour limiter les appels
 - Supporte tous les marchés : .PA, .DE, .L, .AS, US...
 """
-import httpx, math, time, threading, pandas as pd
+import httpx, math, time, threading, gc, pandas as pd
 from datetime import datetime
 from typing import Optional
 from zoneinfo import ZoneInfo, ZoneInfoNotFoundError
@@ -15,9 +15,25 @@ try:
 except Exception:
     TA_AVAILABLE = False
 
-# ── Cache ────────────────────────────────────────────────────────────────────
+# ── Cache LRU borné ──────────────────────────────────────────────────────────
+# Render free tier = 512 MB RAM. Sans limite, 40 symboles × historiques × pandas
+# font exploser la mémoire. On garde au max MAX_ENTRIES entrées valides.
 _cache: dict = {}
-CACHE_TTL = 1800  # 30 minutes
+CACHE_TTL    = 1800   # 30 minutes
+MAX_ENTRIES  = 80     # ~60 symboles actifs + marge
+
+def _evict():
+    """Supprime d'abord les entrées expirées, puis les plus anciennes si dépassement."""
+    now = time.time()
+    # 1. Expirations
+    expired = [k for k, (ts, _) in _cache.items() if (now - ts) >= CACHE_TTL]
+    for k in expired:
+        del _cache[k]
+    # 2. Si encore trop plein → éviction LRU (les plus anciens d'abord)
+    if len(_cache) > MAX_ENTRIES:
+        oldest = sorted(_cache, key=lambda k: _cache[k][0])
+        for k in oldest[:len(_cache) - MAX_ENTRIES]:
+            del _cache[k]
 
 def _cached(key: str):
     entry = _cache.get(key)
@@ -26,6 +42,8 @@ def _cached(key: str):
     return None
 
 def _store(key: str, data):
+    if len(_cache) >= MAX_ENTRIES:
+        _evict()
     _cache[key] = (time.time(), data)
     return data
 
@@ -372,7 +390,18 @@ def get_batch_quotes(symbols: list) -> dict:
 
 # ── Live quote (cache 8s, intervalle 2m) ─────────────────────────────────────
 _live_cache: dict = {}
-LIVE_TTL = 8   # secondes — fraîcheur maximale sans spammer Yahoo
+LIVE_TTL     = 8    # secondes
+MAX_LIVE     = 50   # max entrées simultanées
+
+def _live_evict():
+    now = time.time()
+    expired = [k for k, (ts, _) in _live_cache.items() if (now - ts) >= LIVE_TTL * 30]
+    for k in expired:
+        del _live_cache[k]
+    if len(_live_cache) > MAX_LIVE:
+        oldest = sorted(_live_cache, key=lambda k: _live_cache[k][0])
+        for k in oldest[:len(_live_cache) - MAX_LIVE]:
+            del _live_cache[k]
 
 def get_live_quote(symbol: str) -> dict:
     """
@@ -433,6 +462,8 @@ def get_live_quote(symbol: str) -> dict:
             "currency":     meta.get("currency", "EUR"),
             "delay_min":    15,   # délai Yahoo Finance gratuit en minutes
         }
+        if len(_live_cache) >= MAX_LIVE:
+            _live_evict()
         _live_cache[key] = (time.time(), out)
         return out
 
@@ -447,22 +478,29 @@ def get_indicators(symbol: str, period: str = "6mo") -> dict:
     if len(candles) < 20:
         return {}
     try:
-        close = pd.Series([c["close"] for c in candles])
+        # Utiliser uniquement les 120 dernières bougies (6 mois max) pour limiter la mémoire
+        closes_raw = [c["close"] for c in candles[-120:]]
+        close = pd.Series(closes_raw, dtype="float32")   # float32 = moitié de float64
         sma20 = _clean(close.rolling(20).mean().iloc[-1])
-        sma50 = _clean(close.rolling(50).mean().iloc[-1]) if len(candles) >= 50 else None
+        sma50 = _clean(close.rolling(50).mean().iloc[-1]) if len(close) >= 50 else None
         if not TA_AVAILABLE:
+            del close
             return {"sma20": sma20, "sma50": sma50, "signal": "NEUTRE"}
         rsi      = _clean(ta.momentum.RSIIndicator(close, window=14).rsi().iloc[-1])
         macd_obj = ta.trend.MACD(close)
         macd     = _clean(macd_obj.macd().iloc[-1])
         macd_sig = _clean(macd_obj.macd_signal().iloc[-1])
         bb       = ta.volatility.BollingerBands(close, window=20)
+        bb_upper = _clean(bb.bollinger_hband().iloc[-1])
+        bb_lower = _clean(bb.bollinger_lband().iloc[-1])
+        sig      = _signal(rsi or 50, macd or 0, macd_sig or 0)
+        # Libérer explicitement — pandas retient les références sinon
+        del close, macd_obj, bb
         return {
             "rsi": rsi, "macd": macd, "macd_signal": macd_sig,
-            "bb_upper": _clean(bb.bollinger_hband().iloc[-1]),
-            "bb_lower": _clean(bb.bollinger_lband().iloc[-1]),
+            "bb_upper": bb_upper, "bb_lower": bb_lower,
             "sma20": sma20, "sma50": sma50,
-            "signal": _signal(rsi or 50, macd or 0, macd_sig or 0),
+            "signal": sig,
         }
     except Exception as e:
         print(f"[INDICATORS ERROR] {symbol}: {e}")
@@ -484,6 +522,7 @@ def search_symbols(query: str) -> list[dict]:
 
 # ── Intraday (bougies séance courante) ────────────────────────────────────────
 _intraday_cache: dict = {}
+MAX_INTRADAY = 25   # symboles actifs en même temps
 
 def get_intraday(symbol: str, interval: str = "5m") -> dict:
     """
@@ -573,6 +612,10 @@ def get_intraday(symbol: str, interval: str = "5m") -> dict:
                 "delta_open":  delta_open,
             },
         }
+        # Éviction LRU si cache plein
+        if len(_intraday_cache) >= MAX_INTRADAY:
+            oldest = min(_intraday_cache, key=lambda k: _intraday_cache[k][0])
+            del _intraday_cache[oldest]
         _intraday_cache[key] = (time.time(), out)
         return out
 

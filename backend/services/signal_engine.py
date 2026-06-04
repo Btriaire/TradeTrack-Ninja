@@ -8,7 +8,7 @@ Optimisations Phase 3 :
 - Cache disque /tmp (survit aux cold-starts Render dans la même session)
 - Warmup déclenché au démarrage via main.py
 """
-import time, pickle, os
+import time, pickle, os, gc
 from concurrent.futures import ThreadPoolExecutor, as_completed
 from services.yahoo_finance import get_history, get_indicators, get_quote
 
@@ -216,7 +216,9 @@ def compute_signals() -> dict:
     t0 = time.time()
     scored = []
 
-    with ThreadPoolExecutor(max_workers=12) as executor:
+    # max_workers=4 : Render free = 512 MB. Chaque thread lance pandas + 3 mois d'historique.
+    # 4 workers = ~4 DataFrames en mémoire simultanément — acceptable sur 512 MB.
+    with ThreadPoolExecutor(max_workers=4) as executor:
         future_to_stock = {executor.submit(_score_stock, s): s for s in UNIVERSE}
         for future in as_completed(future_to_stock):
             res = future.result()
@@ -225,6 +227,7 @@ def compute_signals() -> dict:
 
     elapsed = time.time() - t0
     print(f"[SIGNALS] compute_signals: {len(scored)}/{len(UNIVERSE)} en {elapsed:.1f}s")
+    gc.collect()   # libérer les DataFrames pandas résiduels
 
     scored.sort(key=lambda x: x["score"], reverse=True)
 
