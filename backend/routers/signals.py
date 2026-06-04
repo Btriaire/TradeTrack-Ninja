@@ -430,7 +430,8 @@ async def geo_events():
             "synthesis": "Analyse géopolitique indisponible — GROQ_API_KEY requise.",
         }
 
-    result["date"]     = datetime.now().strftime("%d/%m/%Y")
+    result["date"]         = datetime.now().strftime("%d/%m/%Y")
+    result["generated_at"] = datetime.now().strftime("%d/%m/%Y à %H:%M")
     result["headline_count"] = len(headlines)
 
     _geo_cache["data"] = result

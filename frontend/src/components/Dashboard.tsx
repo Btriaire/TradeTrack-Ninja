@@ -11,7 +11,7 @@ import { Logo } from './Logo'
 
 // ── Types ──────────────────────────────────────────────────────────────────────
 interface Index  { name: string; symbol: string; price: number; change_pct: number; change: number }
-interface GeoEv  { title: string; impact: 'HIGH'|'MEDIUM'|'LOW'; signal?: string; brief?: string; sector?: string; description?: string }
+interface GeoEv  { title: string; impact: 'HIGH'|'MEDIUM'|'LOW'; signal?: string; brief?: string; sector?: string; description?: string; date?: string }
 interface Sector { sector: string; avg_perf_5j: number; avg_score: number; top_stocks?: any[] }
 interface Pick   { symbol: string; name: string; score: number; potential_pct: number; reason?: string; price?: number; change_pct?: number; sector?: string }
 interface Article {
@@ -345,7 +345,10 @@ function GeoRow({ ev, onClick }: { ev: GeoEv; onClick: () => void }) {
       <div className={`w-1.5 h-1.5 rounded-full ${style.dot} mt-1.5 shrink-0`}/>
       <div className="min-w-0 flex-1">
         <p className="text-xs font-mono text-slate-300 leading-snug line-clamp-2">{ev.title ?? '—'}</p>
-        {ev.brief && <p className="text-[10px] font-mono text-slate-600 mt-0.5 line-clamp-1">{ev.brief}</p>}
+        <div className="flex items-center gap-2 mt-0.5 flex-wrap">
+          {ev.brief && <p className="text-[10px] font-mono text-slate-600 line-clamp-1">{ev.brief}</p>}
+          {ev.date  && <span className="text-[9px] font-mono text-slate-700 shrink-0">· {ev.date}</span>}
+        </div>
       </div>
       <div className="flex items-center gap-1 shrink-0">
         {ev.signal && (
@@ -484,7 +487,9 @@ function DashboardInner({
 
   // ── Data — null-safe extraction ──────────────────────────────────────────────
   const indices  = safeArr<Index>(indicesRaw)
-  const events   = safeArr<GeoEv>(geoRaw?.events)
+  // Injecte generated_at dans chaque event pour l'afficher dans GeoRow
+  const geoTime  = geoRaw?.generated_at as string | undefined
+  const events   = safeArr<GeoEv>(geoRaw?.events).map(ev => ({ ...ev, date: ev.date ?? geoTime }))
   const sectors  = safeArr<Sector>(sectorsRaw)
   const picks    = safeArr<Pick>(gameRaw?.picks)
   const articles = safeArr<Article>(newsRaw).slice(0, 8)
