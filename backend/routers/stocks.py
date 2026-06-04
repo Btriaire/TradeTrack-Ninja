@@ -242,19 +242,22 @@ async def get_indices():
             async with httpx.AsyncClient(headers=HEADERS) as client:
                 r = await client.get(
                     url,
-                    params={"symbols": symbol, "fields": "regularMarketPrice,regularMarketChangePercent,regularMarketChange"},
+                    params={"symbols": symbol, "fields": "regularMarketPrice,regularMarketChangePercent,regularMarketChange,marketState"},
                     timeout=6,
                 )
             result = r.json().get("quoteResponse", {}).get("result", [])
             if not result:
                 return None
             q = result[0]
+            market_state = q.get("marketState", "CLOSED")
             return {
-                "name":       name,
-                "symbol":     symbol,
-                "price":      round(q.get("regularMarketPrice", 0), 2),
-                "change_pct": round(q.get("regularMarketChangePercent", 0), 2),
-                "change":     round(q.get("regularMarketChange", 0), 2),
+                "name":         name,
+                "symbol":       symbol,
+                "price":        round(q.get("regularMarketPrice", 0), 2),
+                "change_pct":   round(q.get("regularMarketChangePercent", 0), 2),
+                "change":       round(q.get("regularMarketChange", 0), 2),
+                "market_state": market_state,
+                "is_open":      market_state == "REGULAR",
             }
         except Exception as e:
             print(f"[INDEX ERROR] {name}: {e}")
