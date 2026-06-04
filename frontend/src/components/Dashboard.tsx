@@ -1,18 +1,36 @@
 import { useQuery } from '@tanstack/react-query'
-import { useState, useEffect, useId, Component, type ReactNode, type ErrorInfo } from 'react'
+import { useState, useEffect, useId, useRef, Component, type ReactNode, type ErrorInfo } from 'react'
 import {
   TrendingUp, TrendingDown, Zap, Globe, Activity,
   Newspaper, BarChart2, RefreshCw, ArrowUpRight,
-  ArrowRight, Shield, Radio, AlertTriangle,
+  ArrowRight, Shield, Radio, AlertTriangle, X,
+  ExternalLink, ChevronRight, Calendar, Star,
 } from 'lucide-react'
 import { getIndices, getGeoEvents, getTopSectors, getGameOfDay, getGeneralNews } from '../services/api'
 import { Logo } from './Logo'
 
 // ── Types ──────────────────────────────────────────────────────────────────────
 interface Index  { name: string; symbol: string; price: number; change_pct: number; change: number }
-interface GeoEv  { title: string; impact: 'HIGH'|'MEDIUM'|'LOW'; signal?: string; brief?: string }
+interface GeoEv  { title: string; impact: 'HIGH'|'MEDIUM'|'LOW'; signal?: string; brief?: string; sector?: string; description?: string }
 interface Sector { sector: string; avg_perf_5j: number; avg_score: number; top_stocks?: any[] }
-interface Pick   { symbol: string; name: string; score: number; potential_pct: number; reason?: string; price?: number; change_pct?: number }
+interface Pick   { symbol: string; name: string; score: number; potential_pct: number; reason?: string; price?: number; change_pct?: number; sector?: string }
+interface Article {
+  title?: string; summary?: string; description?: string; content?: string
+  source?: string; published_at?: string; publishedAt?: string
+  url?: string; link?: string; image_url?: string
+}
+
+// ── Popup info item ────────────────────────────────────────────────────────────
+interface InfoItem {
+  type: 'news' | 'geo' | 'pick' | 'sector'
+  title: string
+  body?: string
+  meta?: string
+  badge?: { label: string; color: string }
+  extra?: Record<string, string | number | null | undefined>
+  url?: string
+  symbol?: string
+}
 
 // ── Null-safe helpers ─────────────────────────────────────────────────────────
 function safeArr<T>(v: unknown): T[] {
@@ -147,19 +165,144 @@ function CardHeader({ icon: Icon, label, accent = false, extra }: {
   )
 }
 
+// ── Info Popup ─────────────────────────────────────────────────────────────────
+function InfoPopup({ item, onClose, onNavigate }: {
+  item: InfoItem
+  onClose: () => void
+  onNavigate?: (symbol: string) => void
+}) {
+  const ref = useRef<HTMLDivElement>(null)
+
+  useEffect(() => {
+    const fn = (e: KeyboardEvent) => { if (e.key === 'Escape') onClose() }
+    window.addEventListener('keydown', fn)
+    return () => window.removeEventListener('keydown', fn)
+  }, [onClose])
+
+  useEffect(() => {
+    const fn = (e: MouseEvent) => {
+      if (ref.current && !ref.current.contains(e.target as Node)) onClose()
+    }
+    // small delay so the click that opened it doesn't immediately close it
+    const t = setTimeout(() => window.addEventListener('mousedown', fn), 100)
+    return () => { clearTimeout(t); window.removeEventListener('mousedown', fn) }
+  }, [onClose])
+
+  const impactColor = {
+    HIGH:   { bg: 'bg-red-950/60',    border: 'border-red-500/30',   text: 'text-red-400'   },
+    MEDIUM: { bg: 'bg-amber-950/50',  border: 'border-amber-500/30', text: 'text-amber-400' },
+    LOW:    { bg: 'bg-slate-900/60',  border: 'border-slate-700/40', text: 'text-slate-500' },
+  }
+
+  const badgeStyle = item.badge
+    ? { bg: 'bg-slate-900/60', border: 'border-slate-700/30', text: item.badge.color }
+    : null
+
+  return (
+    <div className="fixed inset-0 z-50 flex items-end sm:items-center justify-center p-3 sm:p-6"
+         style={{ background: 'rgba(0,0,0,0.65)', backdropFilter: 'blur(4px)' }}>
+      <div
+        ref={ref}
+        className="relative w-full max-w-lg bg-dark-800 border border-white/[0.1] rounded-2xl shadow-2xl
+          animate-[fadeSlideUp_0.18s_ease-out] overflow-hidden"
+        style={{ maxHeight: '80vh' }}
+      >
+        {/* Header */}
+        <div className={`flex items-start justify-between gap-3 px-5 py-4 border-b border-white/[0.06]
+          ${item.type === 'geo' && item.badge?.label
+            ? (impactColor as any)[item.badge.label]?.bg ?? 'bg-dark-700/50'
+            : 'bg-dark-700/30'}`}>
+          <div className="flex-1 min-w-0">
+            {item.badge && (
+              <div className={`inline-flex items-center gap-1 text-[10px] font-mono font-bold uppercase tracking-widest
+                px-2 py-0.5 rounded-full border mb-2 ${
+                  item.type === 'geo'
+                    ? (impactColor as any)[item.badge.label]?.border + ' ' + (impactColor as any)[item.badge.label]?.text
+                    : 'border-white/10 text-slate-400'
+                }`}>
+                {item.badge.label}
+              </div>
+            )}
+            <h3 className="text-sm font-mono font-bold text-white leading-snug">{item.title}</h3>
+            {item.meta && (
+              <p className="text-[10px] font-mono text-slate-600 mt-1 flex items-center gap-1.5">
+                <Calendar size={9}/>
+                {item.meta}
+              </p>
+            )}
+          </div>
+          <button onClick={onClose}
+            className="p-1.5 rounded-lg text-slate-600 hover:text-white hover:bg-dark-600 transition-colors shrink-0 mt-0.5">
+            <X size={14}/>
+          </button>
+        </div>
+
+        {/* Body */}
+        <div className="px-5 py-4 overflow-y-auto" style={{ maxHeight: 'calc(80vh - 140px)' }}>
+          {item.body ? (
+            <p className="text-xs font-mono text-slate-300 leading-relaxed whitespace-pre-wrap">{item.body}</p>
+          ) : (
+            <p className="text-xs font-mono text-slate-600 italic">Aucune description disponible.</p>
+          )}
+
+          {/* Extra key-value pairs */}
+          {item.extra && Object.keys(item.extra).length > 0 && (
+            <div className="mt-4 pt-4 border-t border-white/[0.05] grid grid-cols-2 gap-2">
+              {Object.entries(item.extra).map(([k, v]) => v != null && (
+                <div key={k} className="bg-dark-700/50 rounded-lg px-3 py-2 border border-white/[0.04]">
+                  <div className="text-[9px] font-mono text-slate-700 uppercase tracking-widest">{k}</div>
+                  <div className="text-xs font-mono font-bold text-slate-300 mt-0.5">{String(v)}</div>
+                </div>
+              ))}
+            </div>
+          )}
+        </div>
+
+        {/* Footer */}
+        <div className="px-5 py-3 border-t border-white/[0.05] flex items-center justify-between gap-2 bg-dark-900/40">
+          <button onClick={onClose}
+            className="text-xs font-mono text-slate-600 hover:text-white transition-colors px-3 py-1.5 rounded-lg hover:bg-dark-700">
+            Fermer
+          </button>
+          <div className="flex items-center gap-2">
+            {item.symbol && onNavigate && (
+              <button
+                onClick={() => { onNavigate(item.symbol!); onClose() }}
+                className="flex items-center gap-1.5 text-xs font-mono font-bold text-red-400 hover:text-red-300
+                  bg-red-950/30 hover:bg-red-950/50 border border-red-500/25 px-3 py-1.5 rounded-lg transition-colors"
+              >
+                Analyser {item.symbol.replace(/\.[A-Z]+$/, '')} <ChevronRight size={11}/>
+              </button>
+            )}
+            {item.url && (
+              <a href={item.url} target="_blank" rel="noopener noreferrer"
+                className="flex items-center gap-1.5 text-[10px] font-mono text-slate-600 hover:text-slate-400
+                  border border-white/[0.05] px-2.5 py-1.5 rounded-lg transition-colors">
+                Source <ExternalLink size={9}/>
+              </a>
+            )}
+          </div>
+        </div>
+      </div>
+    </div>
+  )
+}
+
 // ── Index card ─────────────────────────────────────────────────────────────────
-function IndexCard({ idx }: { idx: Index }) {
+function IndexCard({ idx, onClick }: { idx: Index; onClick: () => void }) {
   const up    = (idx.change_pct ?? 0) >= 0
   const price = n(idx.price)
   const pct   = n(idx.change_pct)
   const chg   = n(idx.change)
   return (
-    <div className={`relative flex flex-col gap-2 px-4 py-3 rounded-xl border backdrop-blur-sm
-      transition-all duration-200 hover:scale-[1.02] hover:shadow-lg overflow-hidden
-      ${up
-        ? 'bg-emerald-950/30 border-emerald-500/20 hover:border-emerald-500/40'
-        : 'bg-red-950/30    border-red-500/20    hover:border-red-500/40'
-      }`}
+    <div
+      onClick={onClick}
+      className={`relative flex flex-col gap-2 px-4 py-3 rounded-xl border backdrop-blur-sm
+        transition-all duration-200 hover:scale-[1.02] hover:shadow-lg overflow-hidden cursor-pointer
+        ${up
+          ? 'bg-emerald-950/30 border-emerald-500/20 hover:border-emerald-500/40'
+          : 'bg-red-950/30    border-red-500/20    hover:border-red-500/40'
+        }`}
     >
       <div className={`absolute inset-0 opacity-5 ${up ? 'bg-emerald-400' : 'bg-red-400'}`}
            style={{ filter: 'blur(20px)', transform: 'translateY(50%)' }}/>
@@ -186,7 +329,7 @@ function IndexCard({ idx }: { idx: Index }) {
 }
 
 // ── Geo event row ──────────────────────────────────────────────────────────────
-function GeoRow({ ev }: { ev: GeoEv }) {
+function GeoRow({ ev, onClick }: { ev: GeoEv; onClick: () => void }) {
   const imp   = ev.impact ?? 'LOW'
   const style = imp === 'HIGH'
     ? { dot: 'bg-red-500 animate-pulse', text: 'text-red-400',   border: 'border-red-500/20',   bg: 'bg-red-950/20'   }
@@ -194,17 +337,24 @@ function GeoRow({ ev }: { ev: GeoEv }) {
     ? { dot: 'bg-amber-500',             text: 'text-amber-400', border: 'border-amber-500/20', bg: 'bg-amber-950/10' }
     : { dot: 'bg-slate-600',             text: 'text-slate-500', border: 'border-slate-700/40', bg: 'bg-dark-700/30'  }
   return (
-    <div className={`flex gap-2.5 px-3 py-2.5 rounded-lg border ${style.border} ${style.bg}`}>
+    <div
+      onClick={onClick}
+      className={`flex gap-2.5 px-3 py-2.5 rounded-lg border cursor-pointer transition-all
+        hover:brightness-125 hover:scale-[1.01] active:scale-100 ${style.border} ${style.bg}`}
+    >
       <div className={`w-1.5 h-1.5 rounded-full ${style.dot} mt-1.5 shrink-0`}/>
       <div className="min-w-0 flex-1">
         <p className="text-xs font-mono text-slate-300 leading-snug line-clamp-2">{ev.title ?? '—'}</p>
         {ev.brief && <p className="text-[10px] font-mono text-slate-600 mt-0.5 line-clamp-1">{ev.brief}</p>}
       </div>
-      {ev.signal && (
-        <span className={`shrink-0 text-[9px] font-mono font-bold uppercase mt-0.5 ${style.text}`}>
-          {ev.signal}
-        </span>
-      )}
+      <div className="flex items-center gap-1 shrink-0">
+        {ev.signal && (
+          <span className={`text-[9px] font-mono font-bold uppercase mt-0.5 ${style.text}`}>
+            {ev.signal}
+          </span>
+        )}
+        <ChevronRight size={10} className="text-slate-700 mt-0.5"/>
+      </div>
     </div>
   )
 }
@@ -238,27 +388,33 @@ function PickCard({ pick, rank, onClick }: { pick: Pick; rank: number; onClick: 
         </div>
         <p className="text-[10px] font-mono text-slate-600 truncate">{pick.name ?? ''}</p>
       </div>
-      {pick.potential_pct != null && (
-        <div className="shrink-0 text-right">
-          <div className="text-sm font-mono font-bold text-emerald-400">
-            +{fmt(pick.potential_pct)}%
-          </div>
-          <div className="text-[9px] font-mono text-slate-700">potentiel</div>
-        </div>
-      )}
+      <div className="shrink-0 text-right">
+        {pick.potential_pct != null && (
+          <>
+            <div className="text-sm font-mono font-bold text-emerald-400">
+              +{fmt(pick.potential_pct)}%
+            </div>
+            <div className="text-[9px] font-mono text-slate-700">potentiel</div>
+          </>
+        )}
+        <ChevronRight size={10} className="text-slate-700 group-hover:text-slate-400 transition-colors mt-1"/>
+      </div>
     </div>
   )
 }
 
 // ── Sector row ─────────────────────────────────────────────────────────────────
-function SectorRow({ sec }: { sec: Sector }) {
+function SectorRow({ sec, onClick }: { sec: Sector; onClick: () => void }) {
   const perf = n(sec.avg_perf_5j)
   const up   = perf >= 0
   const w    = Math.min(Math.abs(perf) * 8, 100)
   return (
-    <div className="flex items-center gap-2.5 py-2">
+    <div
+      onClick={onClick}
+      className="flex items-center gap-2.5 py-2 cursor-pointer hover:bg-dark-700/30 rounded-lg px-1 -mx-1 transition-colors group"
+    >
       <div className="w-24 shrink-0">
-        <span className="text-[10px] font-mono text-slate-400 truncate block">{sec.sector ?? '—'}</span>
+        <span className="text-[10px] font-mono text-slate-400 truncate block group-hover:text-white transition-colors">{sec.sector ?? '—'}</span>
       </div>
       <div className="flex-1 h-1.5 bg-dark-600 rounded-full overflow-hidden">
         <div
@@ -269,17 +425,16 @@ function SectorRow({ sec }: { sec: Sector }) {
       <div className={`text-xs font-mono font-bold tabular-nums w-14 text-right ${up ? 'text-emerald-400' : 'text-red-400'}`}>
         {sign(perf)}{fmt(perf)}%
       </div>
+      <ChevronRight size={9} className="text-slate-700 group-hover:text-slate-500 transition-colors shrink-0"/>
     </div>
   )
 }
 
 // ── News row ───────────────────────────────────────────────────────────────────
-function NewsRow({ article }: { article: any }) {
-  const url = article?.url || article?.link
-  const handleClick = () => { if (url) window.open(url, '_blank', 'noopener') }
+function NewsRow({ article, onClick }: { article: Article; onClick: () => void }) {
   return (
-    <div onClick={handleClick}
-      className={`flex gap-3 px-3 py-2.5 ${url ? 'cursor-pointer' : ''} hover:bg-dark-700/50 transition-colors group`}
+    <div onClick={onClick}
+      className="flex gap-3 px-3 py-2.5 cursor-pointer hover:bg-dark-700/50 transition-colors group"
     >
       <div className="w-1 shrink-0 bg-dark-600 rounded-full mt-1"/>
       <div className="min-w-0 flex-1">
@@ -288,7 +443,7 @@ function NewsRow({ article }: { article: any }) {
         </p>
         <span className="text-[9px] font-mono text-slate-700 mt-0.5 block">{article?.source ?? ''}</span>
       </div>
-      <ArrowRight size={10} className="text-slate-700 group-hover:text-slate-500 transition-colors shrink-0 mt-1"/>
+      <ChevronRight size={10} className="text-slate-700 group-hover:text-slate-400 transition-colors shrink-0 mt-1"/>
     </div>
   )
 }
@@ -305,6 +460,9 @@ function DashboardInner({
   const day   = now.toLocaleDateString('fr-FR', { weekday: 'long', day: '2-digit', month: 'long', year: 'numeric' })
   const clock = now.toLocaleTimeString('fr-FR', { hour: '2-digit', minute: '2-digit', second: '2-digit' })
 
+  // ── Active info popup ─────────────────────────────────────────────────────────
+  const [activeInfo, setActiveInfo] = useState<InfoItem | null>(null)
+
   // ── Queries ─────────────────────────────────────────────────────────────────
   const { data: indicesRaw, isLoading: idxLoading } = useQuery({
     queryKey:        ['indices'],
@@ -320,7 +478,7 @@ function DashboardInner({
     queryKey:              ['news-general'],
     queryFn:               () => getGeneralNews(),
     staleTime:             10 * 60 * 1000,
-    refetchOnWindowFocus:  false,   // évite les refetch intempestifs
+    refetchOnWindowFocus:  false,
     retry:                 1,
   })
 
@@ -329,7 +487,7 @@ function DashboardInner({
   const events   = safeArr<GeoEv>(geoRaw?.events)
   const sectors  = safeArr<Sector>(sectorsRaw)
   const picks    = safeArr<Pick>(gameRaw?.picks)
-  const articles = safeArr<any>(newsRaw).slice(0, 8)
+  const articles = safeArr<Article>(newsRaw).slice(0, 8)
 
   // ── Aggregates ───────────────────────────────────────────────────────────────
   const posIdx      = indices.filter(i => n(i.change_pct) > 0).length
@@ -344,8 +502,98 @@ function DashboardInner({
   const pnl           = portfolioVal - portfolioCost
   const pnlPct        = portfolioCost > 0 ? (pnl / portfolioCost) * 100 : 0
 
+  // ── Info popup builders ────────────────────────────────────────────────────────
+  function openIndexInfo(idx: Index) {
+    const up  = n(idx.change_pct) >= 0
+    setActiveInfo({
+      type:  'sector',
+      title: idx.name,
+      body:  `Cotation actuelle : ${n(idx.price).toLocaleString('fr-FR', { maximumFractionDigits: 2 })}
+Variation du jour : ${sign(n(idx.change_pct))}${fmt(n(idx.change_pct))}%
+Mouvement absolu : ${sign(n(idx.change))}${fmt(n(idx.change), 2)} pts`,
+      badge: { label: up ? 'Hausse' : 'Baisse', color: up ? 'text-emerald-400' : 'text-red-400' },
+      meta: `Symbole Yahoo Finance : ${idx.symbol}`,
+      extra: {
+        'Cours': `${n(idx.price).toLocaleString('fr-FR', { maximumFractionDigits: 0 })}`,
+        'Variation': `${sign(n(idx.change_pct))}${fmt(n(idx.change_pct))}%`,
+        'Points': `${sign(n(idx.change))}${fmt(n(idx.change), 2)}`,
+        'Tendance': up ? '🟢 Haussier' : '🔴 Baissier',
+      },
+    })
+  }
+
+  function openGeoInfo(ev: GeoEv) {
+    setActiveInfo({
+      type:  'geo',
+      title: ev.title ?? '—',
+      body:  ev.brief ?? ev.description ?? 'Aucune description détaillée disponible pour cet événement.',
+      badge: { label: ev.impact ?? 'LOW', color: '' },
+      meta:  ev.sector ? `Secteur concerné : ${ev.sector}` : undefined,
+      extra: {
+        'Impact': ev.impact ?? '—',
+        'Signal': ev.signal ?? '—',
+        ...(ev.sector ? { 'Secteur': ev.sector } : {}),
+      },
+    })
+  }
+
+  function openPickInfo(pick: Pick) {
+    setActiveInfo({
+      type:   'pick',
+      title:  `${pick.symbol?.replace(/\.[A-Z]+$/, '')} — ${pick.name ?? ''}`,
+      body:   pick.reason ?? 'Pas de commentaire IA disponible pour ce pick.',
+      symbol: pick.symbol,
+      meta:   pick.sector ? `Secteur : ${pick.sector}` : undefined,
+      badge:  { label: `Score ${pick.score ?? '?'}`, color: 'text-yellow-400' },
+      extra: {
+        'Score IA':    pick.score != null ? `${pick.score}/10` : '—',
+        'Potentiel':   pick.potential_pct != null ? `+${fmt(pick.potential_pct)}%` : '—',
+        'Cours':       pick.price != null ? `${fmt(n(pick.price), 2)} €` : '—',
+        'Variation':   pick.change_pct != null ? `${sign(n(pick.change_pct))}${fmt(n(pick.change_pct))}%` : '—',
+      },
+    })
+  }
+
+  function openSectorInfo(sec: Sector) {
+    const topList = safeArr<string>(sec.top_stocks).join(', ') || '—'
+    setActiveInfo({
+      type:  'sector',
+      title: `Secteur : ${sec.sector ?? '—'}`,
+      body:  `Performance sur 5 jours : ${sign(n(sec.avg_perf_5j))}${fmt(n(sec.avg_perf_5j))}%
+Score moyen : ${fmt(n(sec.avg_score), 1)}/10
+Valeurs en vedette : ${topList}`,
+      extra: {
+        'Perf 5j':      `${sign(n(sec.avg_perf_5j))}${fmt(n(sec.avg_perf_5j))}%`,
+        'Score moyen':  `${fmt(n(sec.avg_score), 1)}/10`,
+        'Tendance':     n(sec.avg_perf_5j) >= 0 ? '🟢 Haussier' : '🔴 Baissier',
+        'Nb valeurs':   safeArr(sec.top_stocks).length || '—',
+      },
+    })
+  }
+
+  function openArticleInfo(article: Article) {
+    const body = article.summary ?? article.description ?? article.content ?? 'Résumé non disponible.'
+    const date = article.published_at ?? article.publishedAt
+    setActiveInfo({
+      type:  'news',
+      title: article.title ?? '—',
+      body,
+      meta:  [article.source, date ? new Date(date).toLocaleDateString('fr-FR') : ''].filter(Boolean).join(' · '),
+      url:   article.url ?? article.link,
+    })
+  }
+
   return (
     <div className="space-y-4 pb-6">
+
+      {/* ── Info Popup ──────────────────────────────────────────────────────── */}
+      {activeInfo && (
+        <InfoPopup
+          item={activeInfo}
+          onClose={() => setActiveInfo(null)}
+          onNavigate={(sym) => { onSelectSymbol(sym); setActiveInfo(null) }}
+        />
+      )}
 
       {/* ── Hero ──────────────────────────────────────────────────────────── */}
       <div
@@ -409,6 +657,7 @@ function DashboardInner({
           <Radio size={9} className="text-slate-700"/>
           <span className="text-[9px] font-mono text-slate-700 uppercase tracking-widest">Indices mondiaux</span>
           {idxLoading && <RefreshCw size={9} className="text-slate-700 animate-spin ml-1"/>}
+          <span className="text-[9px] font-mono text-slate-800 ml-1">· cliquez pour détails</span>
         </div>
         {idxLoading ? (
           <div className="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-5 xl:grid-cols-6 gap-2">
@@ -420,7 +669,13 @@ function DashboardInner({
           <div className="text-center text-xs font-mono text-slate-700 py-6">Chargement des indices…</div>
         ) : (
           <div className="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-5 xl:grid-cols-6 gap-2">
-            {indices.map(idx => <IndexCard key={idx.symbol ?? idx.name} idx={idx}/>)}
+            {indices.map(idx => (
+              <IndexCard
+                key={idx.symbol ?? idx.name}
+                idx={idx}
+                onClick={() => openIndexInfo(idx)}
+              />
+            ))}
           </div>
         )}
       </div>
@@ -441,7 +696,7 @@ function DashboardInner({
               </div>
             ) : picks.slice(0, 3).map((pick, i) => (
               <PickCard key={pick.symbol ?? i} pick={pick} rank={i + 1}
-                onClick={() => onSelectSymbol(pick.symbol)} />
+                onClick={() => openPickInfo(pick)} />
             ))}
             {gameRaw?.brief && (
               <div className="mt-2 pt-2.5 border-t border-white/[0.04] px-1">
@@ -473,7 +728,9 @@ function DashboardInner({
               <div className="py-8 text-center text-xs font-mono text-slate-700">
                 Analyse géopolitique en cours…
               </div>
-            ) : events.slice(0, 4).map((ev, i) => <GeoRow key={i} ev={ev}/>)}
+            ) : events.slice(0, 4).map((ev, i) => (
+              <GeoRow key={i} ev={ev} onClick={() => openGeoInfo(ev)}/>
+            ))}
           </div>
           {geoRaw?.synthesis && (
             <div className="px-4 pb-3 pt-2 border-t border-white/[0.04]">
@@ -492,7 +749,9 @@ function DashboardInner({
               <div className="py-8 text-center text-xs font-mono text-slate-700">Chargement secteurs…</div>
             ) : (
               <>
-                {sectors.slice(0, 6).map(s => <SectorRow key={s.sector} sec={s}/>)}
+                {sectors.slice(0, 6).map(s => (
+                  <SectorRow key={s.sector} sec={s} onClick={() => openSectorInfo(s)}/>
+                ))}
                 {/* Valeurs en vedette */}
                 <div className="mt-3 pt-3 border-t border-white/[0.04]">
                   <div className="text-[9px] font-mono text-slate-700 uppercase tracking-widest mb-2">Valeurs en vedette</div>
@@ -521,12 +780,14 @@ function DashboardInner({
         {/* Actualités — 2/3 */}
         <GlassCard className="lg:col-span-2">
           <CardHeader icon={Newspaper} label="Actualités Récentes" extra={
-            <span className="text-[9px] font-mono text-slate-700">FR + Monde</span>
+            <span className="text-[9px] font-mono text-slate-700">Cliquez pour lire · FR + Monde</span>
           }/>
           <div className="divide-y divide-white/[0.03]">
             {articles.length === 0 ? (
               <div className="py-10 text-center text-xs font-mono text-slate-700">Chargement actualités…</div>
-            ) : articles.map((a, i) => <NewsRow key={i} article={a}/>)}
+            ) : articles.map((a, i) => (
+              <NewsRow key={i} article={a} onClick={() => openArticleInfo(a)}/>
+            ))}
           </div>
         </GlassCard>
 

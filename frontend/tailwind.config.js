@@ -32,6 +32,22 @@ export default {
       fontSize: {
         '2xs': ['0.65rem', { lineHeight: '1rem' }],
       },
+
+      // ── Animations ────────────────────────────────────────────────────
+      keyframes: {
+        fadeSlideUp: {
+          '0%':   { opacity: '0', transform: 'translateY(12px) scale(0.98)' },
+          '100%': { opacity: '1', transform: 'translateY(0)    scale(1)'    },
+        },
+        ticker: {
+          '0%':   { transform: 'translateX(0)' },
+          '100%': { transform: 'translateX(-50%)' },
+        },
+      },
+      animation: {
+        fadeSlideUp: 'fadeSlideUp 0.18s ease-out',
+        ticker:      'ticker 40s linear infinite',
+      },
     },
   },
   plugins: [],

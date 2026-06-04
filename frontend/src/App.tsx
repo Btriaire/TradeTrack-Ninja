@@ -26,6 +26,7 @@ import { Portfolio }      from './components/Portfolio'
 import { DailySignals }   from './components/DailySignals'
 import { Markets }        from './components/Markets'
 import { FinancialNews }  from './components/FinancialNews'
+import { TickerBanner }  from './components/TickerBanner'
 import { useAuth }        from './hooks/useAuth'
 import { useWatchlist }   from './hooks/useWatchlist'
 import { usePortfolio }   from './hooks/usePortfolio'
@@ -34,14 +35,15 @@ import { getHistory, getIndicators, getQuote, getNews, getIndices, getGeoEvents,
 import { Logo } from './components/Logo'
 
 // ── Vues globales (pas liées à une valeur) ────────────────────────────────────
-type GlobalView = 'dashboard' | 'stock' | 'markets' | 'signals' | 'news'
+type GlobalView = 'dashboard' | 'stock' | 'markets' | 'signals' | 'news' | 'portfolio'
 
 const GLOBAL_VIEWS: { id: GlobalView; label: string; short: string; icon: any; desc: string }[] = [
-  { id: 'dashboard',label: 'Dashboard',        short: 'Home',    icon: Activity,   desc: 'Vue d\'ensemble' },
-  { id: 'stock',    label: 'Analyse Valeur',   short: 'Valeur',  icon: TrendingUp, desc: 'Graphique, news, IA…' },
-  { id: 'markets',  label: 'Places de Marché', short: 'Marchés', icon: Globe,      desc: 'CAC40, DAX, NASDAQ…' },
-  { id: 'signals',  label: 'Signaux du Jour',  short: 'Signaux', icon: Zap,        desc: 'Great Catch / Stay Away' },
-  { id: 'news',     label: 'Actualités',       short: 'News',    icon: Rss,        desc: '15 sources FR + Monde' },
+  { id: 'dashboard', label: 'Dashboard',        short: 'Home',      icon: Activity,   desc: 'Vue d\'ensemble' },
+  { id: 'stock',     label: 'Analyse Valeur',   short: 'Valeur',    icon: TrendingUp, desc: 'Graphique, news, IA…' },
+  { id: 'markets',   label: 'Places de Marché', short: 'Marchés',   icon: Globe,      desc: 'CAC40, DAX, NASDAQ…' },
+  { id: 'signals',   label: 'Signaux du Jour',  short: 'Signaux',   icon: Zap,        desc: 'Great Catch / Stay Away' },
+  { id: 'news',      label: 'Actualités',       short: 'News',      icon: Rss,        desc: '15 sources FR + Monde' },
+  { id: 'portfolio', label: 'Mon Portfolio',    short: 'Portfolio', icon: PieChart,   desc: 'Positions & P&L' },
 ]
 
 // ── Lookup secteur/indice par symbole ─────────────────────────────────────────
@@ -208,6 +210,9 @@ export default function App() {
         </div>
       </header>
 
+      {/* ── Bandeau ticker LCD ──────────────────────────────────────────── */}
+      <TickerBanner onSelectSymbol={handleSelectSymbol} />
+
       {/* ── Barre des indices ────────────────────────────────────────────── */}
       <IndicesBar />
 
@@ -222,35 +227,69 @@ export default function App() {
 
       {/* ── Navigation globale ──────────────────────────────────────────── */}
       <div className={`border-b border-dark-700 bg-dark-900 shrink-0 ${isMobile ? 'px-2 py-1.5' : 'px-4 py-2'}`}>
-        <div className={`flex gap-1.5 ${isMobile ? '' : 'max-w-lg gap-2'}`}>
-          {GLOBAL_VIEWS.map(({ id, label, short, icon: Icon, desc }) => (
-            <button
-              key={id}
-              onClick={() => setGlobalView(id)}
-              className={`flex items-center justify-center gap-1.5 rounded-lg text-xs font-semibold transition-all flex-1 ${
-                isMobile ? 'px-2 py-2 flex-col gap-0.5' : 'px-3 py-2'
-              } ${
-                globalView === id
-                  ? id === 'markets' ? 'bg-blue-500/20 text-blue-400 border border-blue-500/30'
-                  : id === 'signals' ? 'bg-yellow-500/20 text-yellow-400 border border-yellow-500/30'
-                  : id === 'news'    ? 'bg-cyan-500/20 text-cyan-400 border border-cyan-500/30'
-                  : 'bg-accent-blue/20 text-accent-blue border border-accent-blue/30'
-                  : 'text-slate-500 hover:text-white hover:bg-dark-800'
-              }`}
-            >
-              <Icon size={isMobile ? 15 : 13} className="shrink-0" />
-              {isMobile ? (
-                <span className="text-[10px] leading-none font-medium">{short}</span>
-              ) : (
-                <div className="text-left min-w-0">
-                  <div className="truncate">{label}</div>
-                  {globalView !== id && (
-                    <div className="text-slate-600 font-normal text-xs truncate">{desc}</div>
-                  )}
-                </div>
-              )}
-            </button>
-          ))}
+        <div className={`flex gap-1.5 ${isMobile ? 'overflow-x-auto scrollbar-none' : 'max-w-3xl gap-2'}`}>
+          {GLOBAL_VIEWS.map(({ id, label, short, icon: Icon, desc }) => {
+            const isActive = globalView === id
+            const isPortfolio = id === 'portfolio'
+
+            // Calcul P&L pour le badge portfolio
+            const portfolioPnlPct = (() => {
+              if (!isPortfolio || positions.length === 0) return null
+              const cost = positions.reduce((s: number, p: any) => s + (p.buy_price ?? 0) * (p.quantity ?? 0), 0)
+              const val  = positions.reduce((s: number, p: any) => s + (p.buy_price ?? 0) * (p.quantity ?? 0), 0)
+              return cost > 0 ? ((val - cost) / cost) * 100 : null
+            })()
+
+            const activeClass = isActive
+              ? id === 'markets'   ? 'bg-blue-500/20   text-blue-400   border border-blue-500/30'
+              : id === 'signals'   ? 'bg-yellow-500/20 text-yellow-400 border border-yellow-500/30'
+              : id === 'news'      ? 'bg-cyan-500/20   text-cyan-400   border border-cyan-500/30'
+              : id === 'portfolio' ? 'bg-emerald-500/20 text-emerald-400 border border-emerald-500/35'
+              : 'bg-accent-blue/20 text-accent-blue border border-accent-blue/30'
+              : isPortfolio
+                ? 'text-emerald-600 hover:text-emerald-400 hover:bg-emerald-950/40 border border-emerald-900/50'
+                : 'text-slate-500 hover:text-white hover:bg-dark-800'
+
+            return (
+              <button
+                key={id}
+                onClick={() => setGlobalView(id)}
+                className={`relative flex items-center justify-center gap-1.5 rounded-lg text-xs font-semibold transition-all shrink-0 ${
+                  isMobile ? 'px-2.5 py-2 flex-col gap-0.5' : 'flex-1 px-3 py-2'
+                } ${activeClass}`}
+              >
+                <Icon size={isMobile ? 15 : 13} className="shrink-0" />
+                {isMobile ? (
+                  <span className="text-[10px] leading-none font-medium whitespace-nowrap">{short}</span>
+                ) : (
+                  <div className="text-left min-w-0">
+                    <div className="truncate flex items-center gap-1.5">
+                      {label}
+                      {/* Badge nb positions */}
+                      {isPortfolio && positions.length > 0 && (
+                        <span className={`text-[9px] font-mono px-1.5 py-0.5 rounded-full font-bold ${
+                          isActive ? 'bg-emerald-400/20 text-emerald-300' : 'bg-emerald-900/50 text-emerald-600'
+                        }`}>
+                          {positions.length}
+                        </span>
+                      )}
+                    </div>
+                    {!isActive && (
+                      <div className={`font-normal text-xs truncate ${isPortfolio ? 'text-emerald-900' : 'text-slate-600'}`}>
+                        {desc}
+                      </div>
+                    )}
+                  </div>
+                )}
+                {/* Dot portfolio actif */}
+                {isPortfolio && positions.length > 0 && (
+                  <span className={`absolute top-1 right-1 w-1.5 h-1.5 rounded-full ${
+                    isActive ? 'bg-emerald-400' : 'bg-emerald-700'
+                  }`}/>
+                )}
+              </button>
+            )
+          })}
         </div>
       </div>
 
@@ -312,6 +351,17 @@ export default function App() {
               onAddWatchlist={addItem}
               onAddPortfolio={addPosition}
               watchlistSymbols={watchlistItems.map(i => i.symbol)}
+            />
+          )}
+
+          {/* ── Vue PORTFOLIO ───────────────────────────────────────── */}
+          {globalView === 'portfolio' && (
+            <Portfolio
+              positions={positions}
+              onRemove={removePosition}
+              onSelect={handleSelectSymbol}
+              onOpenSearch={() => setSearchOpen(true)}
+              user={user}
             />
           )}
 
