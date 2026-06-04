@@ -1,6 +1,6 @@
 /**
- * TickerBanner — bandeau défilant style Bloomberg/LCD
- * Vert fluo néon quand le marché est ouvert, vert doux quand fermé.
+ * TickerBanner — bandeau défilant style Bloomberg
+ * Vert fluo néon si marché ouvert, vert clair si fermé — toujours lisible.
  */
 import { useQuery } from '@tanstack/react-query'
 import { getIndices } from '../services/api'
@@ -15,7 +15,7 @@ interface IndexQuote {
   market_state?: string
 }
 
-function fmt(v: number | null | undefined, dec = 2): string {
+function fmt(v: number | null | undefined, dec = 2) {
   if (v == null || !isFinite(v)) return '—'
   return v.toFixed(dec)
 }
@@ -27,24 +27,22 @@ function TickerItem({ item }: { item: IndexQuote }) {
   const up     = pct >= 0
   const isOpen = item.is_open ?? false
 
-  // Couleurs : fluo néon si séance ouverte, doux si fermé
-  const upCol   = isOpen ? '#39ff14' : '#00cc55'   // néon lime vs vert doux
-  const downCol = isOpen ? '#ff3b3b' : '#cc3333'   // rouge vif vs rouge doux
-  const col     = up ? upCol : downCol
-
-  // Intensité des glows
-  const nameGlow  = isOpen ? '0 0 12px #39ff1470' : '0 0 6px #00cc2230'
-  const priceGlow = isOpen ? `0 0 16px ${col}80`  : `0 0 6px ${col}30`
-  const badgeGlow = isOpen ? `0 0 12px ${col}80`  : 'none'
+  // OUVERT : néon pur / FERMÉ : couleurs claires et lisibles quand même
+  const upColor   = isOpen ? '#39ff14' : '#66ff66'
+  const downColor = isOpen ? '#ff4444' : '#ff8888'
+  const col       = up ? upColor : downColor
+  const nameColor = isOpen ? '#b8ffb8' : '#99dd99'
+  const priceColor = isOpen ? '#ffffff' : '#ddffdd'
 
   return (
-    <span className="inline-flex items-center gap-2.5 px-5 whitespace-nowrap select-none">
-      {/* Nom */}
+    <span className="inline-flex items-center gap-3 px-5 whitespace-nowrap select-none">
+
+      {/* Nom indice */}
       <span
         className="text-[11px] font-mono font-bold uppercase tracking-widest"
         style={{
-          color:      isOpen ? '#a8ff78' : '#5a9a5a',
-          textShadow: nameGlow,
+          color:      nameColor,
+          textShadow: isOpen ? `0 0 14px ${nameColor}` : 'none',
         }}
       >
         {item.name ?? item.symbol}
@@ -54,8 +52,8 @@ function TickerItem({ item }: { item: IndexQuote }) {
       <span
         className="text-[13px] font-mono font-black tabular-nums"
         style={{
-          color:      isOpen ? '#f0fff0' : '#c8e8c8',
-          textShadow: priceGlow,
+          color:      priceColor,
+          textShadow: isOpen ? `0 0 12px ${col}aa` : 'none',
         }}
       >
         {(item.price ?? 0) > 0
@@ -65,52 +63,43 @@ function TickerItem({ item }: { item: IndexQuote }) {
 
       {/* Badge variation */}
       <span
-        className="text-[11px] font-mono font-bold tabular-nums px-2 py-0.5 rounded"
+        className="text-[12px] font-mono font-bold tabular-nums px-2 py-0.5 rounded"
         style={{
           color:      col,
-          background: up
-            ? (isOpen ? 'rgba(57,255,20,0.16)'  : 'rgba(0,204,85,0.10)')
-            : (isOpen ? 'rgba(255,59,59,0.16)'  : 'rgba(204,51,51,0.10)'),
-          textShadow: `0 0 10px ${col}${isOpen ? 'cc' : '50'}`,
-          border:     `1px solid ${col}${isOpen ? '55' : '25'}`,
-          boxShadow:  badgeGlow,
+          background: up ? 'rgba(0,255,0,0.18)' : 'rgba(255,60,60,0.18)',
+          border:     `1px solid ${col}66`,
+          textShadow: isOpen ? `0 0 12px ${col}` : 'none',
+          boxShadow:  isOpen ? `0 0 10px ${col}55` : 'none',
         }}
       >
         {up ? '▲' : '▼'} {sign(pct)}{fmt(pct)}%
       </span>
 
-      {/* Indicateur OPEN/CLOSED en micro */}
-      {!isOpen && (
-        <span
-          className="text-[8px] font-mono uppercase tracking-widest"
-          style={{ color: '#1a3a1a' }}
-        >CLÔ</span>
-      )}
     </span>
   )
 }
 
 // ── Séparateur ────────────────────────────────────────────────────────────────
-function Sep({ anyOpen }: { anyOpen: boolean }) {
+function Sep() {
   return (
-    <span
-      className="inline-block px-2 text-[10px] font-mono pointer-events-none"
-      style={{ color: anyOpen ? '#1a6a2a' : '#0e3a0e', textShadow: anyOpen ? '0 0 4px #39ff1430' : 'none' }}
-      aria-hidden
-    >◆</span>
+    <span className="inline-block px-2 text-[11px] font-mono select-none" style={{ color: '#336633' }} aria-hidden>
+      ◆
+    </span>
   )
 }
 
-// ── Skeleton animé ────────────────────────────────────────────────────────────
+// ── Skeleton ──────────────────────────────────────────────────────────────────
 const SKELETON_LABELS = ['CAC 40', 'DAX', 'S&P 500', 'NASDAQ', 'FTSE 100', 'Nikkei', 'Euro Stoxx']
 
 function SkeletonItem({ label }: { label: string }) {
   return (
-    <span className="inline-flex items-center gap-2.5 px-5 whitespace-nowrap">
-      <span style={{ color: '#2a5a2a' }} className="text-[11px] font-mono font-bold uppercase tracking-widest">{label}</span>
-      <span style={{ color: '#1a4a1a' }} className="text-[13px] font-mono font-black tabular-nums">─────</span>
-      <span style={{ color: '#163a16', background: 'rgba(0,255,80,0.04)', border: '1px solid #0e2a0e' }}
-            className="text-[11px] font-mono px-2 py-0.5 rounded">▲ --.-%</span>
+    <span className="inline-flex items-center gap-3 px-5 whitespace-nowrap opacity-50">
+      <span className="text-[11px] font-mono font-bold uppercase tracking-widest" style={{ color: '#66aa66' }}>{label}</span>
+      <span className="text-[13px] font-mono font-black" style={{ color: '#558855' }}>─ ─ ─ ─</span>
+      <span className="text-[12px] font-mono px-2 py-0.5 rounded"
+            style={{ color: '#44aa44', background: 'rgba(0,200,0,0.10)', border: '1px solid #224422' }}>
+        ▲ --.-%
+      </span>
     </span>
   )
 }
@@ -125,96 +114,88 @@ export function TickerBanner({ onSelectSymbol }: { onSelectSymbol?: (s: string) 
     retry:           2,
   })
 
-  const hasData  = indices.length > 0
-  const anyOpen  = indices.some(i => i.is_open)   // au moins un marché ouvert
-  const dur      = hasData ? Math.max(25, indices.length * 5) : 18
+  const hasData = indices.length > 0
+  const anyOpen = indices.some(i => i.is_open)
+  const dur     = hasData ? Math.max(20, indices.length * 5) : 16
 
-  const realItems  = hasData ? [...indices, ...indices] : null
-  const skeleItems = hasData ? null : [...SKELETON_LABELS, ...SKELETON_LABELS]
-
-  // Fond et label selon état ouvert/fermé
-  const bgFrom   = anyOpen ? '#021402' : '#020f02'
-  const bgMid    = anyOpen ? '#031a03' : '#031503'
-  const dotColor = anyOpen ? '#39ff14' : (hasData ? '#00cc55' : '#005a20')
-  const dotGlow  = anyOpen ? '0 0 10px #39ff14, 0 0 20px #39ff1450' : (hasData ? '0 0 6px #00cc5540' : 'none')
-  const liveCol  = anyOpen ? '#39ff14' : '#00aa44'
-  const liveGlow = anyOpen ? '0 0 12px #39ff1490' : '0 0 8px #00cc5550'
+  const items = hasData ? [...indices, ...indices] : null
+  const skels = hasData ? null : [...SKELETON_LABELS, ...SKELETON_LABELS]
 
   return (
     <div
       className="relative h-9 border-b overflow-hidden flex items-center"
       style={{
-        background:  `linear-gradient(90deg, ${bgFrom} 0%, ${bgMid} 50%, ${bgFrom} 100%)`,
-        borderColor: anyOpen ? '#0d3a0d' : '#0d2a0d',
+        /* Fond vert foncé — visible, pas noir */
+        background:  '#061406',
+        borderColor: '#1a3a1a',
         boxShadow:   anyOpen
-          ? 'inset 0 -1px 0 rgba(57,255,20,0.12), 0 1px 0 rgba(0,0,0,0.5)'
-          : 'inset 0 -1px 0 rgba(0,255,80,0.06), 0 1px 0 rgba(0,0,0,0.5)',
+          ? 'inset 0 0 20px rgba(57,255,20,0.06), inset 0 -1px 0 rgba(57,255,20,0.15)'
+          : 'inset 0 -1px 0 rgba(0,200,0,0.08)',
       }}
     >
-      {/* Scanlines CRT */}
+      {/* Scanlines légères */}
       <div
         className="absolute inset-0 pointer-events-none z-10"
-        style={{
-          backgroundImage: 'repeating-linear-gradient(0deg,transparent,transparent 3px,rgba(0,0,0,0.07) 3px,rgba(0,0,0,0.07) 4px)',
-        }}
+        style={{ backgroundImage: 'repeating-linear-gradient(0deg,transparent,transparent 3px,rgba(0,0,0,0.1) 3px,rgba(0,0,0,0.1) 4px)' }}
       />
 
-      {/* Label LIVE fixe */}
+      {/* Label gauche */}
       <div
         className="shrink-0 z-20 h-full flex items-center gap-2 px-3 border-r"
-        style={{
-          background:  `linear-gradient(90deg, ${bgFrom}, ${bgMid})`,
-          borderColor: anyOpen ? '#0d3a0d' : '#0d2a0d',
-        }}
+        style={{ background: '#071607', borderColor: '#1a3a1a', minWidth: 68 }}
       >
         <span
-          className="text-[9px] font-mono font-black tracking-[0.3em] uppercase"
-          style={{ color: liveCol, textShadow: liveGlow }}
+          className="text-[9px] font-mono font-black tracking-[0.25em] uppercase"
+          style={{
+            color:      anyOpen ? '#39ff14' : '#55cc55',
+            textShadow: anyOpen ? '0 0 12px #39ff14' : 'none',
+          }}
         >
           {isLoading && !hasData ? 'SYNC' : anyOpen ? 'LIVE' : 'CLÔ'}
         </span>
         <span
           className="w-2 h-2 rounded-full shrink-0"
           style={{
-            background: dotColor,
-            boxShadow:  dotGlow,
-            animation:  anyOpen ? 'pulse 1.5s ease-in-out infinite' : 'none',
+            background: anyOpen ? '#39ff14' : '#44bb44',
+            boxShadow:  anyOpen ? '0 0 8px #39ff14, 0 0 18px #39ff1466' : '0 0 4px #44bb4466',
+            animation:  anyOpen ? 'pulse 1.2s ease-in-out infinite' : 'none',
           }}
         />
       </div>
 
-      {/* Bandeau défilant */}
+      {/* Défilement */}
       <div
         className="ticker-scroll flex items-center h-full"
         style={{ '--ticker-dur': `${dur}s` } as React.CSSProperties}
       >
-        {hasData && realItems
-          ? realItems.map((idx, i) => (
+        {items
+          ? items.map((idx, i) => (
               <span key={`${idx.symbol}-${i}`} className="inline-flex items-center">
                 <button
                   onClick={() => onSelectSymbol?.(idx.symbol)}
-                  className="focus:outline-none hover:brightness-125 transition-[filter] duration-150"
+                  className="focus:outline-none"
                   tabIndex={-1}
+                  style={{ cursor: onSelectSymbol ? 'pointer' : 'default' }}
                 >
                   <TickerItem item={idx} />
                 </button>
-                {i < realItems.length - 1 && <Sep anyOpen={anyOpen} />}
+                {i < items.length - 1 && <Sep />}
               </span>
             ))
-          : skeleItems!.map((label, i) => (
-              <span key={`sk-${label}-${i}`} className="inline-flex items-center">
+          : skels!.map((label, i) => (
+              <span key={`sk-${i}`} className="inline-flex items-center">
                 <SkeletonItem label={label} />
-                {i < skeleItems!.length - 1 && <Sep anyOpen={false} />}
+                {i < skels!.length - 1 && <Sep />}
               </span>
             ))
         }
       </div>
 
-      {/* Fades latéraux */}
-      <div className="absolute left-[74px] top-0 bottom-0 w-8 pointer-events-none z-10"
-           style={{ background: `linear-gradient(90deg, ${bgFrom}, transparent)` }}/>
+      {/* Fades côtés */}
+      <div className="absolute left-[68px] top-0 bottom-0 w-6 pointer-events-none z-10"
+           style={{ background: 'linear-gradient(90deg,#061406,transparent)' }}/>
       <div className="absolute right-0 top-0 bottom-0 w-10 pointer-events-none z-10"
-           style={{ background: `linear-gradient(270deg, ${bgFrom}, transparent)` }}/>
+           style={{ background: 'linear-gradient(270deg,#061406,transparent)' }}/>
     </div>
   )
 }
