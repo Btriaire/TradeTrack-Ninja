@@ -13,7 +13,8 @@ import { QuoteHeader }   from './components/QuoteHeader'
 import { AuthButton }    from './components/AuthButton'
 import { IndicesBar }    from './components/IndicesBar'
 import { SearchModal }   from './components/SearchModal'
-import { Portfolio }     from './components/Portfolio'
+import { Portfolio }            from './components/Portfolio'
+import { StockPortfolioPanel }  from './components/StockPortfolioPanel'
 import { TickerBanner }  from './components/TickerBanner'
 import { Dashboard }     from './components/Dashboard'
 
@@ -474,11 +475,11 @@ export default function App() {
                 />
               )}
               {activeTab === 'portfolio' && (
-                <Portfolio
+                <StockPortfolioPanel
+                  symbol={symbol}
                   positions={positions}
                   onRemove={removePosition}
-                  onSelect={handleSelectSymbol}
-                  onOpenSearch={() => setSearchOpen(true)}
+                  onAdd={addPosition}
                   user={user}
                 />
               )}
