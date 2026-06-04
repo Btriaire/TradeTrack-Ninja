@@ -2,7 +2,7 @@ import { useState, useEffect, useRef } from 'react'
 import { useQuery } from '@tanstack/react-query'
 import {
   Trash2, TrendingUp, TrendingDown, PieChart, Plus,
-  ChevronDown, ChevronUp, Undo2,
+  ChevronDown, ChevronUp, Undo2, ChevronRight,
 } from 'lucide-react'
 import { getQuote } from '../services/api'
 import type { PortfolioPosition } from '../types'
@@ -66,6 +66,8 @@ function PositionRow({
   onRemove: (id: string) => void
   onSelect:  (symbol: string) => void
 }) {
+  const [expanded, setExpanded] = useState(false)
+
   const { data: quote } = useQuery({
     queryKey:        ['quote', pos.symbol],
     queryFn:         () => getQuote(pos.symbol),
@@ -77,59 +79,116 @@ function PositionRow({
   const investedValue = pos.buy_price * pos.quantity
   const pnl           = currentValue - investedValue
   const pnlPct        = investedValue > 0 ? (pnl / investedValue) * 100 : 0
+  const pnlPerShare   = currentPrice - pos.buy_price
   const up            = pnl >= 0
 
+  const col  = up ? 'text-green-400' : 'text-red-400'
+  const bg   = up ? 'bg-green-500/10 border-green-500/20' : 'bg-red-500/10 border-red-500/20'
+  const sign = up ? '+' : ''
+
   return (
-    <div className="group relative flex items-center gap-3 px-4 py-3 border-b border-dark-700/60
-      hover:bg-dark-700/30 transition-colors">
+    <div className="border-b border-dark-700/60">
+      {/* ── Ligne principale ─────────────────────────────────────────── */}
+      <div className="group relative flex items-center gap-3 px-4 py-3 hover:bg-dark-700/30 transition-colors">
 
-      {/* ── Contenu cliquable → analyse ───────────────────────────────── */}
-      <div
-        className="flex-1 min-w-0 cursor-pointer"
-        onClick={() => onSelect(pos.symbol)}
-      >
-        <div className="flex items-center gap-2 flex-wrap">
-          <span className="text-sm font-bold text-white font-mono">{pos.symbol}</span>
-          <span className="text-xs text-slate-500 truncate max-w-[160px]">{pos.name}</span>
-        </div>
-        <div className="flex items-center gap-3 mt-0.5 text-xs text-slate-500 flex-wrap">
-          <span className="font-mono tabular-nums">
-            {pos.quantity} × {pos.buy_price.toFixed(2)} €
-          </span>
-          {quote && (
-            <span className="text-slate-400">
-              actuel : <span className="text-white font-mono tabular-nums">{currentPrice.toFixed(2)} €</span>
+        {/* Contenu cliquable → analyse */}
+        <div
+          className="flex-1 min-w-0 cursor-pointer"
+          onClick={() => onSelect(pos.symbol)}
+        >
+          <div className="flex items-center gap-2 flex-wrap">
+            <span className="text-sm font-bold text-white font-mono">{pos.symbol}</span>
+            <span className="text-xs text-slate-500 truncate max-w-[160px]">{pos.name}</span>
+          </div>
+          <div className="flex items-center gap-3 mt-0.5 text-xs text-slate-500 flex-wrap">
+            <span className="font-mono tabular-nums">
+              {pos.quantity} × {pos.buy_price.toFixed(2)} €
             </span>
-          )}
+            {quote && (
+              <span className="text-slate-400">
+                actuel : <span className="text-white font-mono tabular-nums">{currentPrice.toFixed(2)} €</span>
+              </span>
+            )}
+          </div>
         </div>
+
+        {/* Valeur + P&L — clic → détail */}
+        <button
+          onClick={e => { e.stopPropagation(); setExpanded(v => !v) }}
+          className="flex flex-col items-end gap-0.5 shrink-0 group/pnl"
+          title="Voir le détail P&L"
+        >
+          <span className="text-sm font-mono font-bold text-white tabular-nums">
+            {currentValue.toFixed(0)} €
+          </span>
+          <div className={`flex items-center gap-1 text-xs font-semibold tabular-nums ${col}`}>
+            {up ? <TrendingUp size={10}/> : <TrendingDown size={10}/>}
+            {sign}{pnl.toFixed(0)} €
+            <span className="text-[10px] opacity-70">({sign}{pnlPct.toFixed(1)}%)</span>
+            <ChevronRight
+              size={10}
+              className={`opacity-40 group-hover/pnl:opacity-100 transition-all duration-200
+                ${expanded ? 'rotate-90' : ''}`}
+            />
+          </div>
+        </button>
+
+        {/* Bouton supprimer */}
+        <button
+          onClick={e => { e.stopPropagation(); onRemove(pos.id) }}
+          className="shrink-0 flex items-center justify-center w-8 h-8 rounded-lg
+            text-slate-600 hover:text-white hover:bg-red-500
+            border border-transparent hover:border-red-400
+            transition-all duration-150 active:scale-90"
+          title={`Supprimer ${pos.symbol}`}
+        >
+          <Trash2 size={15} />
+        </button>
       </div>
 
-      {/* ── Valeur + P&L ──────────────────────────────────────────────── */}
-      <div
-        className="flex flex-col items-end gap-0.5 shrink-0 cursor-pointer"
-        onClick={() => onSelect(pos.symbol)}
-      >
-        <span className="text-sm font-mono font-bold text-white tabular-nums">
-          {currentValue.toFixed(0)} €
-        </span>
-        <div className={`flex items-center gap-1 text-xs font-semibold tabular-nums ${up ? 'text-green-400' : 'text-red-400'}`}>
-          {up ? <TrendingUp size={10}/> : <TrendingDown size={10}/>}
-          {up ? '+' : ''}{pnl.toFixed(0)} €
-          <span className="text-[10px] opacity-70">({up ? '+' : ''}{pnlPct.toFixed(1)}%)</span>
-        </div>
-      </div>
+      {/* ── Panneau détail P&L (dépliable) ───────────────────────────── */}
+      {expanded && (
+        <div className={`mx-3 mb-3 rounded-xl border px-4 py-3 ${bg}`}>
+          <div className="grid grid-cols-2 gap-x-6 gap-y-2 text-xs font-mono">
 
-      {/* ── Bouton supprimer — toujours visible, grand, rouge clair ─────── */}
-      <button
-        onClick={e => { e.stopPropagation(); onRemove(pos.id) }}
-        className="shrink-0 flex items-center justify-center w-8 h-8 rounded-lg
-          text-slate-600 hover:text-white hover:bg-red-500
-          border border-transparent hover:border-red-400
-          transition-all duration-150 active:scale-90"
-        title={`Supprimer ${pos.symbol}`}
-      >
-        <Trash2 size={15} />
-      </button>
+            {/* Colonne par action */}
+            <div>
+              <div className="text-[9px] uppercase tracking-widest text-slate-600 mb-1.5">Par action</div>
+              <div className="flex justify-between">
+                <span className="text-slate-500">Achat</span>
+                <span className="text-white tabular-nums">{pos.buy_price.toFixed(2)} €</span>
+              </div>
+              <div className="flex justify-between">
+                <span className="text-slate-500">Actuel</span>
+                <span className="text-white tabular-nums">{currentPrice.toFixed(2)} €</span>
+              </div>
+              <div className={`flex justify-between font-bold mt-1 pt-1 border-t border-current/20 ${col}`}>
+                <span>Δ / action</span>
+                <span className="tabular-nums">{sign}{pnlPerShare.toFixed(2)} €</span>
+              </div>
+            </div>
+
+            {/* Colonne total */}
+            <div>
+              <div className="text-[9px] uppercase tracking-widest text-slate-600 mb-1.5">Total ({pos.quantity} act.)</div>
+              <div className="flex justify-between">
+                <span className="text-slate-500">Investi</span>
+                <span className="text-white tabular-nums">{investedValue.toFixed(2)} €</span>
+              </div>
+              <div className="flex justify-between">
+                <span className="text-slate-500">Valeur</span>
+                <span className="text-white tabular-nums">{currentValue.toFixed(2)} €</span>
+              </div>
+              <div className={`flex justify-between font-bold mt-1 pt-1 border-t border-current/20 ${col}`}>
+                <span>Δ total</span>
+                <span className="tabular-nums">{sign}{pnl.toFixed(2)} €&nbsp;
+                  <span className="opacity-70 font-normal text-[10px]">({sign}{pnlPct.toFixed(2)}%)</span>
+                </span>
+              </div>
+            </div>
+          </div>
+        </div>
+      )}
     </div>
   )
 }
