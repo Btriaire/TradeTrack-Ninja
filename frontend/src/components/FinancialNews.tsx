@@ -62,7 +62,7 @@ function ArticleModal({ article, onClose }: { article: Article; onClose: () => v
   const { data: full, isLoading: loadingFull, isError: errorFull } = useQuery({
     queryKey: ['article-content', article.url],
     queryFn:  () => getArticleContent(article.url),
-    staleTime: 60 * 60 * 1000, // 1h
+    staleTime: 24 * 60 * 60 * 1000, // 24h — un article ne change pas
     retry: 1,
   })
 

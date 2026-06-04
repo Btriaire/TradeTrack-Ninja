@@ -7,7 +7,7 @@ router = APIRouter(prefix="/news", tags=["news"])
 
 # ── Cache scraping articles (évite de re-scraper le même article) ────────────
 _article_cache: dict = {}
-ARTICLE_CACHE_TTL = 3600  # 1h
+ARTICLE_CACHE_TTL = 86400  # 24h — un article ne change pas
 
 _SCRAPE_HEADERS = {
     "User-Agent": (
