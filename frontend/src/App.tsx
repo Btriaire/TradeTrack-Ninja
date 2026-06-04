@@ -245,7 +245,7 @@ export default function App() {
       )}
 
       {/* ── Navigation globale ──────────────────────────────────────────── */}
-      <div className={`border-b border-dark-700 bg-dark-900 shrink-0 ${isMobile ? 'px-2 py-1.5' : 'px-4 py-2'}`}>
+      <div className={`border-b border-dark-700 bg-dark-900 shrink-0 ${isMobile ? 'px-2 py-2' : 'px-4 py-2.5'}`}>
         <div className={`flex gap-1.5 ${isMobile ? 'overflow-x-auto scrollbar-none' : 'max-w-3xl gap-2'}`}>
           {GLOBAL_VIEWS.map(({ id, label, short, icon: Icon, desc }) => {
             const isActive = globalView === id
@@ -267,19 +267,19 @@ export default function App() {
               : 'bg-accent-blue/20 text-accent-blue border border-accent-blue/30'
               : isPortfolio
                 ? 'text-emerald-600 hover:text-emerald-400 hover:bg-emerald-950/40 border border-emerald-900/50'
-                : 'text-slate-500 hover:text-white hover:bg-dark-800'
+                : 'text-slate-400 hover:text-white hover:bg-dark-800'
 
             return (
               <button
                 key={id}
                 onClick={() => setGlobalView(id)}
-                className={`relative flex items-center justify-center gap-1.5 rounded-lg text-xs font-semibold transition-all shrink-0 ${
-                  isMobile ? 'px-2.5 py-2 flex-col gap-0.5' : 'flex-1 px-3 py-2'
+                className={`relative flex items-center justify-center gap-1.5 rounded-lg text-sm font-semibold transition-all shrink-0 ${
+                  isMobile ? 'px-3 py-2.5 flex-col gap-0.5' : 'flex-1 px-3.5 py-2.5'
                 } ${activeClass}`}
               >
-                <Icon size={isMobile ? 15 : 13} className="shrink-0" />
+                <Icon size={isMobile ? 18 : 15} className="shrink-0" />
                 {isMobile ? (
-                  <span className="text-[10px] leading-none font-medium whitespace-nowrap">{short}</span>
+                  <span className="text-[11px] leading-none font-medium whitespace-nowrap">{short}</span>
                 ) : (
                   <div className="text-left min-w-0">
                     <div className="truncate flex items-center gap-1.5">
@@ -341,6 +341,7 @@ export default function App() {
             items={watchlistItems}
             onAdd={addItem}
             onRemove={removeItem}
+            positions={positions}
           />
         </aside>
 
