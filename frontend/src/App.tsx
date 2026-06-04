@@ -387,7 +387,7 @@ export default function App() {
           {/* ── Vue VALEUR (stock-specific) ─────────────────────────── */}
           {globalView === 'stock' && (
             <>
-              <QuoteHeader symbol={symbol} isMobile={isMobile} />
+              <QuoteHeader symbol={symbol} isMobile={isMobile} positions={positions} />
 
               {/* Période + bouton Intraday */}
               {activeTab === 'chart' && (
