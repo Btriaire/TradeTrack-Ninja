@@ -1,6 +1,7 @@
 import { useRef } from 'react'
 import { TrendingUp, TrendingDown, RefreshCw, Wifi, Briefcase } from 'lucide-react'
 import { useRealtime, type MarketState } from '../hooks/useRealtime'
+import { isPeaEligible } from '../utils/lcl-fees'
 import type { PortfolioPosition } from '../types'
 
 interface Props {
@@ -138,6 +139,16 @@ export function QuoteHeader({ symbol, isMobile = false, positions = [] }: Props)
             }`}>
               {symbol}
             </span>
+            {/* Badge PEA */}
+            {isPeaEligible(symbol) ? (
+              <span className="text-[10px] font-bold bg-blue-500/20 text-blue-400 border border-blue-500/30 px-2 py-0.5 rounded font-mono tracking-wide">
+                ✓ PEA
+              </span>
+            ) : (
+              <span className="text-[10px] font-bold bg-red-500/10 text-red-500/70 border border-red-500/20 px-2 py-0.5 rounded font-mono tracking-wide">
+                ✗ PEA
+              </span>
+            )}
             {live?.currency && (
               <span className="text-xs text-slate-500 bg-dark-700 px-2 py-0.5 rounded shrink-0">
                 {live.currency}
