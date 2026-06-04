@@ -1,10 +1,11 @@
 import { useState } from 'react'
-import { useMutation } from '@tanstack/react-query'
+import { useMutation, useQuery } from '@tanstack/react-query'
 import {
   Activity, AlertTriangle, TrendingUp, TrendingDown,
   Minus, ChevronDown, ChevronUp, Zap, Eye, EyeOff, RefreshCw,
+  Users, Target, ArrowUpRight, ArrowDownRight,
 } from 'lucide-react'
-import { analyzeDiagnostic } from '../services/api'
+import { analyzeDiagnostic, getTargets } from '../services/api'
 import type { Candle, Indicators, Article } from '../types'
 
 interface Props {
@@ -153,6 +154,154 @@ function ConfidenceBar({ value, max = 10 }: { value: number; max?: number }) {
 }
 
 
+// ── Consensus Analystes ───────────────────────────────────────────────────────
+function AnalystConsensus({ symbol }: { symbol: string }) {
+  const { data, isLoading } = useQuery({
+    queryKey: ['targets', symbol],
+    queryFn:  () => getTargets(symbol),
+    staleTime: 12 * 60 * 60 * 1000,
+  })
+
+  if (isLoading) {
+    return (
+      <div className="bg-dark-800 border border-slate-700/60 rounded-xl p-4 animate-pulse">
+        <div className="h-3 w-40 bg-dark-700 rounded mb-3"/>
+        <div className="h-20 bg-dark-700 rounded"/>
+      </div>
+    )
+  }
+  if (!data || data.nb_analysts === 0) return null
+
+  const d = data
+  const totalDist = (d.distribution.strongBuy + d.distribution.buy + d.distribution.hold + d.distribution.sell + d.distribution.strongSell) || 1
+  const bullPct  = Math.round((d.distribution.strongBuy + d.distribution.buy) / totalDist * 100)
+  const holdPct  = Math.round(d.distribution.hold / totalDist * 100)
+  const bearPct  = Math.round((d.distribution.sell + d.distribution.strongSell) / totalDist * 100)
+
+  const recoLabel: Record<string, string> = {
+    'strong_buy': 'ACHAT FORT', 'buy': 'ACHAT', 'hold': 'CONSERVER',
+    'sell': 'VENDRE', 'strong_sell': 'VENTE FORTE', 'underperform': 'SOUS-PERFORMER',
+  }
+  const recoColor: Record<string, string> = {
+    'strong_buy': 'text-emerald-400', 'buy': 'text-green-400', 'hold': 'text-amber-400',
+    'sell': 'text-orange-400', 'strong_sell': 'text-red-400', 'underperform': 'text-red-400',
+  }
+  const rKey = d.recommendation_key?.toLowerCase().replace(' ', '_') || 'hold'
+  const up   = d.upside_mean != null && d.upside_mean > 0
+
+  return (
+    <div className="bg-dark-800 border border-indigo-500/25 rounded-xl overflow-hidden">
+      {/* Ligne déco */}
+      <div className="h-px bg-gradient-to-r from-transparent via-indigo-500/40 to-transparent"/>
+
+      <div className="p-4 space-y-4">
+        {/* Header */}
+        <div className="flex items-center justify-between">
+          <div className="flex items-center gap-2">
+            <Users size={13} className="text-indigo-400"/>
+            <span className="text-xs font-bold tracking-widest text-slate-300">CONSENSUS ANALYSTES</span>
+            <span className="text-[10px] text-slate-600 font-mono bg-dark-700 px-1.5 py-0.5 rounded">{d.nb_analysts} analystes</span>
+          </div>
+          <span className={`text-xs font-bold tracking-wider ${recoColor[rKey] || 'text-slate-400'}`}>
+            {recoLabel[rKey] || d.recommendation_key?.toUpperCase()}
+          </span>
+        </div>
+
+        {/* Prix cibles */}
+        {d.target_mean != null && d.current_price > 0 && (
+          <div className="grid grid-cols-3 gap-2">
+            {/* Bas */}
+            <div className="bg-dark-700/60 rounded-lg px-3 py-2 text-center border border-slate-800">
+              <div className="text-[9px] text-red-400/70 uppercase tracking-widest mb-1">Objectif bas</div>
+              <div className="text-sm font-bold font-mono text-white">{d.target_low?.toFixed(0)}</div>
+              {d.target_low && d.current_price && (
+                <div className={`text-[10px] font-mono ${d.target_low >= d.current_price ? 'text-green-400' : 'text-red-400'}`}>
+                  {((d.target_low / d.current_price - 1) * 100).toFixed(1)}%
+                </div>
+              )}
+            </div>
+
+            {/* Consensus (central + gros) */}
+            <div className={`rounded-lg px-3 py-2 text-center border ${up ? 'bg-emerald-500/10 border-emerald-500/30' : 'bg-red-500/10 border-red-500/30'}`}>
+              <div className="flex items-center justify-center gap-1 mb-1">
+                <Target size={9} className={up ? 'text-emerald-400' : 'text-red-400'}/>
+                <span className="text-[9px] uppercase tracking-widest text-slate-500">Consensus</span>
+              </div>
+              <div className={`text-lg font-black font-mono ${up ? 'text-emerald-300' : 'text-red-300'}`}>
+                {d.target_mean?.toFixed(0)}
+              </div>
+              {d.upside_mean != null && (
+                <div className={`flex items-center justify-center gap-0.5 text-xs font-bold font-mono ${up ? 'text-emerald-400' : 'text-red-400'}`}>
+                  {up ? <ArrowUpRight size={11}/> : <ArrowDownRight size={11}/>}
+                  {up ? '+' : ''}{d.upside_mean}%
+                </div>
+              )}
+            </div>
+
+            {/* Haut */}
+            <div className="bg-dark-700/60 rounded-lg px-3 py-2 text-center border border-slate-800">
+              <div className="text-[9px] text-green-400/70 uppercase tracking-widest mb-1">Objectif haut</div>
+              <div className="text-sm font-bold font-mono text-white">{d.target_high?.toFixed(0)}</div>
+              {d.target_high && d.current_price && (
+                <div className="text-[10px] font-mono text-green-400">
+                  +{((d.target_high / d.current_price - 1) * 100).toFixed(1)}%
+                </div>
+              )}
+            </div>
+          </div>
+        )}
+
+        {/* Barre de distribution buy / hold / sell */}
+        <div className="space-y-1.5">
+          <div className="flex h-3 rounded-full overflow-hidden gap-px">
+            {bullPct > 0 && (
+              <div className="bg-emerald-500/70 transition-all" style={{ width: `${bullPct}%` }}
+                title={`Achat: ${d.distribution.strongBuy + d.distribution.buy} analystes`}/>
+            )}
+            {holdPct > 0 && (
+              <div className="bg-amber-400/60 transition-all" style={{ width: `${holdPct}%` }}
+                title={`Conserver: ${d.distribution.hold} analystes`}/>
+            )}
+            {bearPct > 0 && (
+              <div className="bg-red-500/60 transition-all" style={{ width: `${bearPct}%` }}
+                title={`Vendre: ${d.distribution.sell + d.distribution.strongSell} analystes`}/>
+            )}
+          </div>
+          <div className="flex justify-between text-[10px] font-mono">
+            <span className="text-emerald-400">
+              ▲ Achat {d.distribution.strongBuy + d.distribution.buy}
+              {d.distribution.strongBuy > 0 && <span className="text-emerald-300 ml-1">({d.distribution.strongBuy} fort)</span>}
+            </span>
+            <span className="text-amber-400">≈ Conserver {d.distribution.hold}</span>
+            <span className="text-red-400">▼ Vendre {d.distribution.sell + d.distribution.strongSell}</span>
+          </div>
+        </div>
+
+        {/* Score de conviction */}
+        {d.recommendation_score != null && (
+          <div className="flex items-center gap-2 text-xs text-slate-600 font-mono">
+            <span>Score conviction :</span>
+            <div className="flex-1 h-1.5 bg-dark-700 rounded-full overflow-hidden">
+              {/* 1=Strong Buy (gauche/vert), 5=Strong Sell (droite/rouge) */}
+              <div
+                className="h-full rounded-full bg-gradient-to-r from-emerald-500 via-amber-400 to-red-500"
+                style={{ width: `${((d.recommendation_score - 1) / 4) * 100}%` }}
+              />
+            </div>
+            <span className={recoColor[rKey] || 'text-slate-400'}>
+              {d.recommendation_score?.toFixed(2)} / 5
+            </span>
+          </div>
+        )}
+
+        <p className="text-[10px] text-slate-700 font-mono">
+          Source : Yahoo Finance · Agrège {d.nb_analysts} banques & brokers · Mis à jour quotidiennement
+        </p>
+      </div>
+    </div>
+  )
+}
+
 // ── Composant principal ───────────────────────────────────────────────────────
 export function DiagnosticPanel({ symbol, name, sector, index, candles, indicators, articles }: Props) {
   const [result,      setResult]      = useState<DiagResult | null>(null)
@@ -224,6 +373,9 @@ export function DiagnosticPanel({ symbol, name, sector, index, candles, indicato
           </div>
         </div>
       </div>
+
+      {/* ── Consensus Analystes — chargé automatiquement ─────────────── */}
+      <AnalystConsensus symbol={symbol} />
 
       {/* ── Résultat ────────────────────────────────────────────────────── */}
       {mutation.isPending && (

@@ -68,6 +68,17 @@ export const getArticleContent = (url: string) =>
     url: string; content: string; title: string; image: string | null; author: string | null; sitename: string
   })
 
+export const getTargets = (symbol: string) =>
+  api.get(`/stocks/targets/${symbol}`).then(r => r.data as {
+    symbol: string; current_price: number
+    target_mean: number | null; target_median: number | null
+    target_high: number | null; target_low: number | null
+    upside_mean: number | null
+    recommendation_key: string; recommendation_score: number | null
+    nb_analysts: number
+    distribution: { strongBuy: number; buy: number; hold: number; sell: number; strongSell: number }
+  })
+
 export const getSignals = () =>
   api.get('/signals/daily').then(r => r.data)
 

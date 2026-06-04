@@ -79,6 +79,79 @@ def profile(symbol: str):
         raise HTTPException(500, str(e))
 
 
+@router.get("/targets/{symbol}")
+def get_targets(symbol: str):
+    """
+    Consensus analystes : price targets + distribution buy/hold/sell.
+    Données Yahoo Finance via yfinance (agrège 10-50 brokers).
+    Cache 12h (les targets bougent peu).
+    """
+    import yfinance as yf, time
+
+    sym = symbol.upper()
+
+    # Cache simple 12h
+    cache_key = f"_targets_{sym}"
+    import routers.stocks as _self
+    if not hasattr(_self, "_targets_cache"):
+        _self._targets_cache = {}
+    cached = _self._targets_cache.get(cache_key)
+    if cached and (time.time() - cached[0]) < 43200:
+        return cached[1]
+
+    try:
+        t    = yf.Ticker(sym)
+        info = t.info
+
+        current = info.get("currentPrice") or info.get("regularMarketPrice") or 0
+
+        # Prix cibles analystes
+        target_mean   = info.get("targetMeanPrice")
+        target_high   = info.get("targetHighPrice")
+        target_low    = info.get("targetLowPrice")
+        target_median = info.get("targetMedianPrice")
+        reco_mean     = info.get("recommendationMean")   # 1=Strong Buy → 5=Strong Sell
+        reco_key      = info.get("recommendationKey", "")  # "buy","hold","sell"…
+        nb_analysts   = info.get("numberOfAnalystOpinions", 0)
+
+        # Distribution buy/hold/sell (mois courant)
+        dist = {"strongBuy": 0, "buy": 0, "hold": 0, "sell": 0, "strongSell": 0}
+        try:
+            recs = t.recommendations
+            if recs is not None and not recs.empty:
+                row = recs[recs["period"] == "0m"]
+                if not row.empty:
+                    for k in dist:
+                        dist[k] = int(row.iloc[0].get(k, 0))
+        except Exception:
+            pass
+
+        # Upside potentiel
+        upside_mean = round((target_mean / current - 1) * 100, 1) if current and target_mean else None
+
+        result = {
+            "symbol":        sym,
+            "current_price": current,
+            "target_mean":   target_mean,
+            "target_median": target_median,
+            "target_high":   target_high,
+            "target_low":    target_low,
+            "upside_mean":   upside_mean,
+            "recommendation_key":  reco_key,
+            "recommendation_score": reco_mean,   # 1.0=Strong Buy, 5.0=Strong Sell
+            "nb_analysts":   nb_analysts,
+            "distribution":  dist,
+        }
+
+        _self._targets_cache[cache_key] = (time.time(), result)
+        print(f"[TARGETS] {sym}: target={target_mean}, upside={upside_mean}%, n={nb_analysts}")
+        return result
+
+    except Exception as e:
+        print(f"[TARGETS ERROR] {sym}: {e}")
+        return {"symbol": sym, "error": str(e)}
+
+
 @router.get("/history/{symbol}")
 def history(symbol: str, period: str = "6mo", interval: str = "1d"):
     try:
