@@ -170,7 +170,8 @@ function AnalystConsensus({ symbol }: { symbol: string }) {
       </div>
     )
   }
-  if (!data || data.nb_analysts === 0) return null
+  // Garde robuste : si erreur backend, distribution absente, ou 0 analystes → on n'affiche rien
+  if (!data || (data as any).error || !data.distribution || !data.nb_analysts) return null
 
   const d = data
   const totalDist = (d.distribution.strongBuy + d.distribution.buy + d.distribution.hold + d.distribution.sell + d.distribution.strongSell) || 1
