@@ -306,19 +306,39 @@ Réponds UNIQUEMENT en JSON valide (pas de markdown):
 @router.post("/diagnostic")
 def analyze_diagnostic(req: DiagnosticRequest):
     """Diagnostic & Pronostic holistique — technique + news + secteur + IA."""
-    groq_key = os.getenv("GROQ_API_KEY", "")
-    if not groq_key:
-        return {"error": "GROQ_API_KEY non configurée"}
+    gemini_key = os.getenv("GEMINI_API_KEY", "")
+    groq_key   = os.getenv("GROQ_API_KEY", "")
+
+    if not gemini_key and not groq_key:
+        return {"error": "Aucune clé IA configurée (GEMINI_API_KEY ou GROQ_API_KEY)"}
 
     # Détection de patterns graphiques
     patterns = detect_patterns(req.candles, req.indicators)
+    prompt   = _build_diagnostic_prompt(req, patterns)
 
-    prompt = _build_diagnostic_prompt(req, patterns)
+    raw = None
+    last_err = ""
+    # Priorité : Gemini (disponible) → Groq (fallback)
+    if gemini_key:
+        for model in GEMINI_MODELS:
+            try:
+                raw = _call_gemini(gemini_key, model, prompt)
+                print(f"[DIAGNOSTIC] {req.symbol} via Gemini/{model}")
+                break
+            except Exception as e:
+                last_err = str(e)
+                print(f"[DIAGNOSTIC] Gemini/{model} échec: {e}")
+    if raw is None and groq_key:
+        try:
+            raw = _call_groq(groq_key, prompt)
+            print(f"[DIAGNOSTIC] {req.symbol} via Groq")
+        except Exception as e:
+            last_err = str(e)
 
     try:
-        raw = _call_groq(groq_key, prompt)
+        if raw is None:
+            raise ValueError(last_err or "Tous les modèles ont échoué")
         result = _parse_json(raw)
-        # Enrichir avec les patterns calculés localement
         result["patterns_detected"] = patterns
         return result
     except Exception as e:
@@ -326,8 +346,12 @@ def analyze_diagnostic(req: DiagnosticRequest):
         return {
             "error": str(e),
             "patterns_detected": patterns,
-            "diagnostic": {"etat": "NEUTRE", "force": 5, "resume": "Analyse indisponible temporairement"},
-            "pronostic": {"verdict": "CONSERVER", "risques": [], "catalyseurs": []}
+            "diagnostic": {"etat": "NEUTRE", "force": 5, "resume": "Analyse indisponible temporairement",
+                           "technique": "", "pattern_principal": "", "support": None,
+                           "resistance": None, "sentiment_news": "NEUTRE"},
+            "pronostic": {"verdict": "CONSERVER", "risques": [], "catalyseurs": [],
+                          "court_terme": {"horizon":"","direction":"LATÉRAL","cible_prix":0,"confiance":5},
+                          "moyen_terme": {"horizon":"","direction":"LATÉRAL","cible_prix":0,"confiance":5}},
         }
 
 
@@ -492,9 +516,10 @@ def analyze_cloture(req: ClotureRequest):
     Analyse de clôture IA — intègre séance intraday + historique multi-horizons
     + secteur + géopolitique → Diagnostic & Pronostic complet.
     """
-    groq_key = os.getenv("GROQ_API_KEY", "")
-    if not groq_key:
-        return {"error": "GROQ_API_KEY non configurée"}
+    gemini_key = os.getenv("GEMINI_API_KEY", "")
+    groq_key   = os.getenv("GROQ_API_KEY", "")
+    if not gemini_key and not groq_key:
+        return {"error": "Aucune clé IA configurée"}
 
     # Patterns graphiques
     patterns = detect_patterns(req.candles, req.indicators)
@@ -507,8 +532,24 @@ def analyze_cloture(req: ClotureRequest):
 
     prompt = _build_cloture_prompt(req, patterns, intraday)
 
+    raw = None
+    if gemini_key:
+        for model in GEMINI_MODELS:
+            try:
+                raw = _call_gemini(gemini_key, model, prompt)
+                print(f"[CLOTURE] {req.symbol} via Gemini/{model}")
+                break
+            except Exception as e:
+                print(f"[CLOTURE] Gemini/{model} échec: {e}")
+    if raw is None and groq_key:
+        try:
+            raw = _call_groq(groq_key, prompt)
+        except Exception as e:
+            print(f"[CLOTURE] Groq échec: {e}")
+
     try:
-        raw    = _call_groq(groq_key, prompt)
+        if raw is None:
+            raise ValueError("Tous les modèles ont échoué")
         result = _parse_json(raw)
         result["patterns_detected"] = patterns
         result["intraday_session"]  = intraday.get("session", {})
