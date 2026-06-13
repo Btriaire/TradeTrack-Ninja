@@ -1,8 +1,7 @@
 """
 RSS scraper — fetch parallèle + cache
-Stratégie sources : FR en priorité (IP cloud moins bloquées),
-puis international. Seeking Alpha / Investing.com / WSJ retirés
-(bloquent systématiquement les IPs Render).
+Sources : FR en priorité (IP cloud), puis international, finance spécialisé et géopolitique.
+Seeking Alpha / Investing.com / WSJ / MarketWatch-DJ retirés (bloquent IPs Render).
 """
 import feedparser
 import httpx
@@ -12,28 +11,30 @@ import time
 from datetime import datetime
 from typing import Optional
 
-# ── Sources primaires — fiables sur IP cloud ───────────────────────────────────
+# ── Sources primaires pour /news/ (news valeur + fallback général) ─────────────
 SOURCES = {
-    # France — rarement bloquées
+    # France — fiables sur cloud
     "BFM Business":     "https://bfmbusiness.bfmtv.com/rss/info/",
     "Boursorama":       "https://www.boursorama.com/rss/actus-societes",
     "Figaro Economie":  "https://www.lefigaro.fr/rss/figaro_economie.xml",
     "Zone Bourse":      "https://www.zonebourse.com/rss/news.xml",
-    # International — généralement accessibles
+    "Challenges":       "https://www.challenges.fr/rss.xml",
+    # International
     "Yahoo Finance":    "https://finance.yahoo.com/rss/topstories",
     "CNBC":             "https://www.cnbc.com/id/100003114/device/rss/rss.html",
     "Reuters":          "https://feeds.reuters.com/reuters/businessNews",
 }
 
-# ── Sources fallback ───────────────────────────────────────────────────────────
 SOURCES_FR = {
     "Capital.fr":       "https://www.capital.fr/feed",
     "La Tribune":       "https://www.latribune.fr/rss.html",
+    "Forbes FR":        "https://www.forbes.fr/feed/",
 }
 
-# ── Sources générales — onglet Actualités ─────────────────────────────────────
+# ── Sources générales — onglet Actualités (toutes catégories) ─────────────────
 SOURCES_GENERAL = {
-    # France fiables cloud ✅
+
+    # ── 🇫🇷 France ─────────────────────────────────────────────────────────────
     "BFM Business":     ("https://bfmbusiness.bfmtv.com/rss/info/",                     "France",        "🇫🇷"),
     "Boursorama":       ("https://www.boursorama.com/rss/actus-societes",                "Marchés FR",    "🇫🇷"),
     "Figaro Economie":  ("https://www.lefigaro.fr/rss/figaro_economie.xml",              "France",        "🇫🇷"),
@@ -41,11 +42,32 @@ SOURCES_GENERAL = {
     "Capital.fr":       ("https://www.capital.fr/feed",                                  "France",        "🇫🇷"),
     "La Tribune":       ("https://www.latribune.fr/rss.html",                            "France",        "🇫🇷"),
     "Les Echos":        ("https://www.lesechos.fr/arc/outboundfeeds/rss/?outputType=xml","France",        "🇫🇷"),
-    # International ✅
+
+    # ── 💹 Finance spécialisé ──────────────────────────────────────────────────
+    "L'AGEFI":          ("https://www.agefi.fr/rss/all.xml",                             "Finance",       "💹"),
+    "Forbes FR":        ("https://www.forbes.fr/feed/",                                  "Finance",       "💹"),
+    "Challenges":       ("https://www.challenges.fr/rss.xml",                            "Finance",       "💹"),
+    "Investopedia":     ("https://www.investopedia.com/feeds/rss.aspx",                  "Finance",       "💹"),
+    "The Street":       ("https://www.thestreet.com/.rss/full/",                         "Finance",       "💹"),
+    "Barron's":         ("https://www.barrons.com/real-time/feed/rss",                   "Finance",       "💹"),
+
+    # ── 🌍 International ────────────────────────────────────────────────────────
     "CNBC":             ("https://www.cnbc.com/id/100003114/device/rss/rss.html",        "International", "🌍"),
     "Reuters Business": ("https://feeds.reuters.com/reuters/businessNews",               "International", "🌍"),
-    "Guardian Business":("https://www.theguardian.com/uk/business/rss",                 "International", "🌍"),
-    # Marchés ⚠️ (parfois bloqués)
+    "Guardian Business":("https://www.theguardian.com/uk/business/rss",                  "International", "🌍"),
+
+    # ── 🌐 Géopolitique ────────────────────────────────────────────────────────
+    "France 24 Éco":    ("https://www.france24.com/fr/rss?uri=/fr/economie",             "Géopolitique",  "🌐"),
+    "RFI":              ("https://www.rfi.fr/fr/rss.xml",                                "Géopolitique",  "🌐"),
+    "Deutsche Welle":   ("https://rss.dw.com/rdf/rss-en-business",                      "Géopolitique",  "🌐"),
+    "The Diplomat":     ("https://thediplomat.com/feed/",                                "Géopolitique",  "🌐"),
+    "Politico EU":      ("https://www.politico.eu/rss/",                                 "Géopolitique",  "🌐"),
+    "EurActiv":         ("https://www.euractiv.com/feed/",                               "Géopolitique",  "🌐"),
+    "CFR Global":       ("https://www.cfr.org/rss/global.xml",                           "Géopolitique",  "🌐"),
+    "Le Monde Diplo":   ("https://www.monde-diplomatique.fr/rss.xml",                    "Géopolitique",  "🌐"),
+    "Al Jazeera Eco":   ("https://www.aljazeera.com/xml/rss/all.xml",                    "Géopolitique",  "🌐"),
+
+    # ── 📊 Marchés ─────────────────────────────────────────────────────────────
     "Yahoo Finance":    ("https://finance.yahoo.com/rss/topstories",                     "Marchés",       "📊"),
     "MarketWatch":      ("https://feeds.content.dowjones.io/public/rss/mw_topstories",  "Marchés",       "📊"),
 }
@@ -208,7 +230,6 @@ def fetch_all_news(symbol_filter: Optional[str] = None) -> list[dict]:
         articles = loop.run_until_complete(_fetch_all_async(SOURCES))
         loop.close()
 
-    # Fallback si peu d'articles (seuil relevé à 5)
     if len(articles) < 5:
         print("[RSS] Peu d'articles, ajout sources fallback...")
         try:

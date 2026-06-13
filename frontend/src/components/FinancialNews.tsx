@@ -15,14 +15,17 @@ interface Article {
 }
 
 const CATEGORIES = [
-  { id: 'Tout',          label: 'Tout',          icon: '◈' },
+  { id: 'Tout',          label: 'Tout',          icon: '◈'  },
   { id: 'France',        label: 'France',        icon: '🇫🇷' },
   { id: 'Marchés FR',   label: 'Marchés FR',    icon: '📊' },
+  { id: 'Finance',       label: 'Finance',       icon: '💹' },
   { id: 'International', label: 'International', icon: '🌍' },
+  { id: 'Géopolitique',  label: 'Géopolitique',  icon: '🌐' },
   { id: 'Marchés',       label: 'Marchés',       icon: '📈' },
 ]
 
 const SOURCE_COLORS: Record<string, string> = {
+  // France
   'Les Echos':        'bg-blue-500/15 text-blue-400 border-blue-500/30',
   'BFM Business':     'bg-red-500/15 text-red-400 border-red-500/30',
   'Capital.fr':       'bg-orange-500/15 text-orange-400 border-orange-500/30',
@@ -30,14 +33,30 @@ const SOURCE_COLORS: Record<string, string> = {
   'Boursorama':       'bg-emerald-500/15 text-emerald-400 border-emerald-500/30',
   'Zone Bourse':      'bg-teal-500/15 text-teal-400 border-teal-500/30',
   'La Tribune':       'bg-purple-500/15 text-purple-400 border-purple-500/30',
+  // Finance spécialisé
+  "L'AGEFI":          'bg-yellow-600/15 text-yellow-400 border-yellow-600/30',
+  'Forbes FR':        'bg-amber-500/15 text-amber-400 border-amber-500/30',
+  'Challenges':       'bg-rose-500/15 text-rose-400 border-rose-500/30',
+  'Investopedia':     'bg-green-600/15 text-green-400 border-green-600/30',
+  'The Street':       'bg-lime-500/15 text-lime-400 border-lime-500/30',
+  "Barron's":         'bg-amber-600/15 text-amber-300 border-amber-600/30',
+  // International
   'Reuters Business': 'bg-orange-600/15 text-orange-300 border-orange-600/30',
   'CNBC':             'bg-blue-400/15 text-blue-300 border-blue-400/30',
   'Guardian Business':'bg-indigo-500/15 text-indigo-400 border-indigo-500/30',
+  // Géopolitique
+  'France 24 Éco':    'bg-cyan-600/15 text-cyan-400 border-cyan-600/30',
+  'RFI':              'bg-sky-500/15 text-sky-400 border-sky-500/30',
+  'Deutsche Welle':   'bg-slate-400/15 text-slate-300 border-slate-400/30',
+  'The Diplomat':     'bg-violet-600/15 text-violet-400 border-violet-600/30',
+  'Politico EU':      'bg-blue-700/15 text-blue-300 border-blue-700/30',
+  'EurActiv':         'bg-indigo-600/15 text-indigo-300 border-indigo-600/30',
+  'CFR Global':       'bg-slate-600/15 text-slate-300 border-slate-600/30',
+  'Le Monde Diplo':   'bg-red-700/15 text-red-300 border-red-700/30',
+  'Al Jazeera Eco':   'bg-yellow-700/15 text-yellow-300 border-yellow-700/30',
+  // Marchés
   'MarketWatch':      'bg-green-500/15 text-green-400 border-green-500/30',
-  'Investing.com':    'bg-slate-500/15 text-slate-300 border-slate-500/30',
   'Yahoo Finance':    'bg-violet-500/15 text-violet-400 border-violet-500/30',
-  'Seeking Alpha':    'bg-cyan-500/15 text-cyan-400 border-cyan-500/30',
-  'WSJ Markets':      'bg-amber-500/15 text-amber-400 border-amber-500/30',
 }
 
 function formatDate(dateStr: string): string {
@@ -316,7 +335,7 @@ export function FinancialNews() {
               </span>
             </div>
             <p className="text-xs text-slate-500">
-              {sources.length} sources · Les Echos, Reuters, CNBC, BFM, Capital, MarketWatch, Investing.com…
+              {sources.length} sources · Finance (AGEFI, Forbes, Barron's…) · Géopolitique (RFI, DW, Politico, CFR…) · Marchés FR
               {lastUpdate && <span className="ml-2 text-slate-600">· {lastUpdate}</span>}
             </p>
           </div>
@@ -409,8 +428,12 @@ export function FinancialNews() {
 
       {/* Footer sources */}
       {!isLoading && (
-        <p className="text-xs text-slate-700 text-center pb-2">
-          Sources : Les Echos · BFM Business · Capital · Figaro Éco · Boursorama · Zone Bourse · La Tribune · Reuters · CNBC · Guardian Business · MarketWatch · Investing.com · Yahoo Finance · Seeking Alpha · WSJ
+        <p className="text-xs text-slate-700 text-center pb-2 leading-relaxed">
+          🇫🇷 Les Echos · BFM Business · Capital · Figaro Éco · Boursorama · Zone Bourse · La Tribune
+          &nbsp;·&nbsp; 💹 L'AGEFI · Forbes FR · Challenges · Investopedia · The Street · Barron's
+          &nbsp;·&nbsp; 🌍 Reuters · CNBC · Guardian
+          &nbsp;·&nbsp; 🌐 France 24 · RFI · Deutsche Welle · The Diplomat · Politico EU · EurActiv · CFR · Le Monde Diplo · Al Jazeera
+          &nbsp;·&nbsp; 📊 Yahoo Finance · MarketWatch
         </p>
       )}
 
