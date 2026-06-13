@@ -47,8 +47,9 @@ interface Props {
 export function NewsPanel({ symbol }: Props) {
   const { data, isLoading, refetch, isFetching } = useQuery({
     queryKey: ['news', symbol],
-    queryFn: () => getNews(),
+    queryFn: () => getNews(symbol),   // ← fix: symbol était ignoré
     staleTime: 5 * 60 * 1000,
+    refetchOnWindowFocus: false,
   })
 
   return (

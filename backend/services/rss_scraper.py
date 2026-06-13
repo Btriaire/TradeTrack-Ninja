@@ -1,6 +1,8 @@
 """
-RSS scraper — fetch parallèle + cache 5 min
-Sources fiables qui n'bloquent pas les IPs cloud.
+RSS scraper — fetch parallèle + cache
+Stratégie sources : FR en priorité (IP cloud moins bloquées),
+puis international. Seeking Alpha / Investing.com / WSJ retirés
+(bloquent systématiquement les IPs Render).
 """
 import feedparser
 import httpx
@@ -10,41 +12,42 @@ import time
 from datetime import datetime
 from typing import Optional
 
-# ── Sources par catégorie ──────────────────────────────────────────────────────
-
+# ── Sources primaires — fiables sur IP cloud ───────────────────────────────────
 SOURCES = {
-    "Investing.com":   "https://www.investing.com/rss/news_301.rss",
-    "MarketWatch":     "https://feeds.content.dowjones.io/public/rss/mw_realtimeheadlines",
-    "Yahoo Finance":   "https://finance.yahoo.com/rss/topstories",
-    "Seeking Alpha":   "https://seekingalpha.com/market_currents.xml",
+    # France — rarement bloquées
+    "BFM Business":     "https://bfmbusiness.bfmtv.com/rss/info/",
+    "Boursorama":       "https://www.boursorama.com/rss/actus-societes",
+    "Figaro Economie":  "https://www.lefigaro.fr/rss/figaro_economie.xml",
+    "Zone Bourse":      "https://www.zonebourse.com/rss/news.xml",
+    # International — généralement accessibles
+    "Yahoo Finance":    "https://finance.yahoo.com/rss/topstories",
+    "CNBC":             "https://www.cnbc.com/id/100003114/device/rss/rss.html",
+    "Reuters":          "https://feeds.reuters.com/reuters/businessNews",
 }
 
+# ── Sources fallback ───────────────────────────────────────────────────────────
 SOURCES_FR = {
-    "Boursorama":      "https://www.boursorama.com/rss/actus-societes",
-    "Figaro Economie": "https://www.lefigaro.fr/rss/figaro_economie.xml",
-    "Zonebourse":      "https://www.zonebourse.com/rss/news.xml",
-    "BFM Business":    "https://www.bfmtv.com/rss/economie/",
+    "Capital.fr":       "https://www.capital.fr/feed",
+    "La Tribune":       "https://www.latribune.fr/rss.html",
 }
 
-# ── Sources générales pour l'onglet Financial News ────────────────────────────
+# ── Sources générales — onglet Actualités ─────────────────────────────────────
 SOURCES_GENERAL = {
-    # 🇫🇷 France
-    "Les Echos":        ("https://www.lesechos.fr/arc/outboundfeeds/rss/?outputType=xml",         "France",        "🇫🇷"),
-    "BFM Business":     ("https://bfmbusiness.bfmtv.com/rss/info/",                               "France",        "🇫🇷"),
-    "Capital.fr":       ("https://www.capital.fr/feed",                                            "France",        "🇫🇷"),
-    "Figaro Economie":  ("https://www.lefigaro.fr/rss/figaro_economie.xml",                        "France",        "🇫🇷"),
-    "Boursorama":       ("https://www.boursorama.com/rss/actus-societes",                          "Marchés FR",    "🇫🇷"),
-    "Zone Bourse":      ("https://www.zonebourse.com/rss/news.xml",                                "Marchés FR",    "🇫🇷"),
-    "La Tribune":       ("https://www.latribune.fr/rss.html",                                      "France",        "🇫🇷"),
-    # 🌍 International
-    "Reuters Business": ("https://feeds.reuters.com/reuters/businessNews",                         "International", "🌍"),
-    "CNBC":             ("https://www.cnbc.com/id/100003114/device/rss/rss.html",                  "International", "🌍"),
-    "Guardian Business":("https://www.theguardian.com/uk/business/rss",                            "International", "🌍"),
-    "MarketWatch":      ("https://feeds.content.dowjones.io/public/rss/mw_topstories",             "Marchés",       "📊"),
-    "Investing.com":    ("https://www.investing.com/rss/news_301.rss",                             "Marchés",       "📊"),
-    "Yahoo Finance":    ("https://finance.yahoo.com/rss/topstories",                               "Marchés",       "📊"),
-    "Seeking Alpha":    ("https://seekingalpha.com/market_currents.xml",                           "Marchés",       "📊"),
-    "WSJ Markets":      ("https://feeds.a.dj.com/rss/RSSMarketsMain.xml",                         "Marchés",       "📊"),
+    # France fiables cloud ✅
+    "BFM Business":     ("https://bfmbusiness.bfmtv.com/rss/info/",                     "France",        "🇫🇷"),
+    "Boursorama":       ("https://www.boursorama.com/rss/actus-societes",                "Marchés FR",    "🇫🇷"),
+    "Figaro Economie":  ("https://www.lefigaro.fr/rss/figaro_economie.xml",              "France",        "🇫🇷"),
+    "Zone Bourse":      ("https://www.zonebourse.com/rss/news.xml",                      "Marchés FR",    "🇫🇷"),
+    "Capital.fr":       ("https://www.capital.fr/feed",                                  "France",        "🇫🇷"),
+    "La Tribune":       ("https://www.latribune.fr/rss.html",                            "France",        "🇫🇷"),
+    "Les Echos":        ("https://www.lesechos.fr/arc/outboundfeeds/rss/?outputType=xml","France",        "🇫🇷"),
+    # International ✅
+    "CNBC":             ("https://www.cnbc.com/id/100003114/device/rss/rss.html",        "International", "🌍"),
+    "Reuters Business": ("https://feeds.reuters.com/reuters/businessNews",               "International", "🌍"),
+    "Guardian Business":("https://www.theguardian.com/uk/business/rss",                 "International", "🌍"),
+    # Marchés ⚠️ (parfois bloqués)
+    "Yahoo Finance":    ("https://finance.yahoo.com/rss/topstories",                     "Marchés",       "📊"),
+    "MarketWatch":      ("https://feeds.content.dowjones.io/public/rss/mw_topstories",  "Marchés",       "📊"),
 }
 
 HEADERS = {
@@ -90,7 +93,6 @@ def _parse_date(entry) -> str:
 
 def _extract_image(entry) -> Optional[str]:
     """Essaie d'extraire une URL d'image depuis l'entrée RSS."""
-    # 1. media:content
     media = getattr(entry, "media_content", None)
     if media and isinstance(media, list):
         for m in media:
@@ -98,14 +100,12 @@ def _extract_image(entry) -> Optional[str]:
             if url and any(url.lower().endswith(ext) for ext in (".jpg", ".jpeg", ".png", ".webp")):
                 return url
 
-    # 2. enclosures
     enclosures = getattr(entry, "enclosures", [])
     for enc in enclosures:
         url = enc.get("href") or enc.get("url", "")
         if url and "image" in enc.get("type", "image"):
             return url
 
-    # 3. Regex dans le summary/content HTML
     html = getattr(entry, "summary", "") or ""
     for attr in ("content",):
         val = getattr(entry, attr, None)
@@ -117,7 +117,6 @@ def _extract_image(entry) -> Optional[str]:
         if url.startswith("http"):
             return url
 
-    # 4. media:thumbnail
     thumb = getattr(entry, "media_thumbnail", None)
     if thumb and isinstance(thumb, list):
         return thumb[0].get("url")
@@ -142,7 +141,6 @@ async def _fetch_source_async(
         for entry in feed.entries[:15]:
             title   = entry.get("title", "").strip()
             summary = entry.get("summary", entry.get("description", "")).strip()
-            # Nettoyer le HTML du résumé
             summary_clean = re.sub(r"<[^>]+>", " ", summary).strip()
             summary_clean = re.sub(r"\s+", " ", summary_clean)
             link    = entry.get("link", "")
@@ -210,8 +208,9 @@ def fetch_all_news(symbol_filter: Optional[str] = None) -> list[dict]:
         articles = loop.run_until_complete(_fetch_all_async(SOURCES))
         loop.close()
 
+    # Fallback si peu d'articles (seuil relevé à 5)
     if len(articles) < 5:
-        print("[RSS] Tentative sources françaises...")
+        print("[RSS] Peu d'articles, ajout sources fallback...")
         try:
             fr = asyncio.run(_fetch_all_async(SOURCES_FR))
         except RuntimeError:
