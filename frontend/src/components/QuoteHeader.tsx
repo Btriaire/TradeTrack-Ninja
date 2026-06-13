@@ -105,6 +105,17 @@ function PortfolioPnlBadge({
   )
 }
 
+// ── Éligibilité PEA étendue : UE + EEE + UK + Suisse (marchés européens au sens large)
+// Pour les actions US/JP/etc. (pas de suffixe) on n'affiche PAS le badge PEA du tout.
+const EUROPEAN_EXCHANGES = [
+  '.PA','.DE','.AS','.BE','.MI','.MC','.LS','.HE','.ST','.CO','.OL','.VI','.WA','.PR','.BD', // UE+EEE
+  '.L','.AX','.SW','.IR','.BR',  // UK, Australie, Suisse, Irlande, Belgique-FR
+]
+function isEuropeanStock(symbol: string): boolean {
+  const s = symbol.toUpperCase()
+  return EUROPEAN_EXCHANGES.some(sfx => s.endsWith(sfx))
+}
+
 // ── Composant principal ─────────────────────────────────────────────────────
 export function QuoteHeader({ symbol, isMobile = false, positions = [] }: Props) {
   const { live, flash, isPolling } = useRealtime(symbol)
@@ -139,15 +150,18 @@ export function QuoteHeader({ symbol, isMobile = false, positions = [] }: Props)
             }`}>
               {symbol}
             </span>
-            {/* Badge PEA */}
-            {isPeaEligible(symbol) ? (
-              <span className="text-[10px] font-bold bg-blue-500/20 text-blue-400 border border-blue-500/30 px-2 py-0.5 rounded font-mono tracking-wide">
-                ✓ PEA
-              </span>
-            ) : (
-              <span className="text-[10px] font-bold bg-red-500/10 text-red-500/70 border border-red-500/20 px-2 py-0.5 rounded font-mono tracking-wide">
-                ✗ PEA
-              </span>
+            {/* Badge PEA — uniquement pour les bourses européennes
+                 Pour les actions US/JP/etc. pas de badge : hors sujet */}
+            {isEuropeanStock(symbol) && (
+              isPeaEligible(symbol) ? (
+                <span className="text-[10px] font-bold bg-blue-500/20 text-blue-400 border border-blue-500/30 px-2 py-0.5 rounded font-mono tracking-wide">
+                  ✓ PEA
+                </span>
+              ) : (
+                <span className="text-[10px] font-bold bg-red-500/10 text-red-500/70 border border-red-500/20 px-2 py-0.5 rounded font-mono tracking-wide">
+                  ✗ PEA
+                </span>
+              )
             )}
             {live?.currency && (
               <span className="text-xs text-slate-500 bg-dark-700 px-2 py-0.5 rounded shrink-0">

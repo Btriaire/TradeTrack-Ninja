@@ -1,10 +1,11 @@
 import { useQuery } from '@tanstack/react-query'
-import { getQuote } from '../services/api'
+import { getQuote, getBatchQuotes } from '../services/api'
 import type { PortfolioPosition } from '../types'
 
 // ── Types ─────────────────────────────────────────────────────────────────────
 interface Props {
   positions:       PortfolioPosition[]
+  lastSymbol?:     string | null
   onNavigate:      (view: string) => void
   onOpenSearch:    () => void
   onSelectSymbol:  (s: string) => void
@@ -342,21 +343,26 @@ function PortfolioSection({ positions, onNavigate, onOpenSearch }: {
   onNavigate: (v: string) => void
   onOpenSearch: () => void
 }) {
-  const { data: quotes = {} } = useQuery({
-    queryKey: ['welcome-portfolio-quotes', positions.map(p => p.symbol).join(',')],
+  const uniqueSymbols = [...new Set(positions.map(p => p.symbol))]
+
+  // Batch request → 1 appel HTTP au lieu de N
+  const { data: batchData = {} } = useQuery({
+    queryKey: ['welcome-portfolio-batch', uniqueSymbols.sort().join(',')],
     queryFn: async () => {
-      const entries = await Promise.all(
-        [...new Set(positions.map(p => p.symbol))].map(async sym => {
-          const q = await getQuote(sym)
-          return [sym, q?.price ?? 0] as [string, number]
-        })
-      )
-      return Object.fromEntries(entries)
+      if (uniqueSymbols.length === 0) return {}
+      const result = await getBatchQuotes(uniqueSymbols) as Record<string, { price?: number }>
+      // Normalise vers { symbol: price }
+      return Object.fromEntries(
+        Object.entries(result).map(([sym, data]) => [sym, data?.price ?? 0])
+      ) as Record<string, number>
     },
     enabled: positions.length > 0,
-    refetchInterval: 60000,
-    staleTime: 30000,
+    refetchInterval: 60_000,
+    staleTime: 30_000,
   })
+
+  // Fallback: si batch non dispo, utilise LiveRow qui a ses propres queries
+  const quotes: Record<string, number> = batchData
 
   if (positions.length === 0) {
     return (
@@ -420,8 +426,29 @@ function PortfolioSection({ positions, onNavigate, onOpenSearch }: {
   )
 }
 
+// ── Mini-badge live prix pour le bouton "Reprendre" ───────────────────────────
+function LastSymbolBadge({ symbol }: { symbol: string }) {
+  const { data } = useQuery({
+    queryKey: ['quote', symbol],
+    queryFn:  () => getQuote(symbol),
+    staleTime: 30_000,
+    refetchInterval: 60_000,
+  })
+  if (!data) return <span className="text-slate-600 font-mono">{symbol}</span>
+  const up = data.change_pct >= 0
+  return (
+    <span className="flex items-center gap-1.5">
+      <span className="font-mono font-bold text-white">{symbol.split('.')[0]}</span>
+      <span className="font-mono text-slate-400">{data.price.toFixed(2)}</span>
+      <span className={`font-mono text-xs font-bold ${up ? 'text-emerald-400' : 'text-red-400'}`}>
+        {up ? '+' : ''}{data.change_pct.toFixed(2)}%
+      </span>
+    </span>
+  )
+}
+
 // ── Page principale ───────────────────────────────────────────────────────────
-export function WelcomePage({ positions, onNavigate, onOpenSearch, onSelectSymbol }: Props) {
+export function WelcomePage({ positions, lastSymbol, onNavigate, onOpenSearch, onSelectSymbol }: Props) {
   const now = new Date()
   const hour = now.getHours()
   const greeting = hour < 12 ? 'Bonjour' : hour < 18 ? 'Bon après-midi' : 'Bonsoir'
@@ -498,19 +525,35 @@ export function WelcomePage({ positions, onNavigate, onOpenSearch, onSelectSymbo
 
         {/* ── Raccourcis rapides ────────────────────────────────────────── */}
         <div className="flex flex-wrap gap-2 justify-center">
-          {[
-            { label: '🔍 Rechercher une valeur', action: onOpenSearch },
-            { label: '📰 Actualités',             action: () => onNavigate('news') },
-            { label: '💼 Mon Portfolio',           action: () => onNavigate('portfolio') },
-          ].map(({ label, action }) => (
+          {/* Reprendre — affiché si une valeur a déjà été visitée */}
+          {lastSymbol && (
             <button
-              key={label}
-              onClick={action}
-              className="text-xs text-slate-500 hover:text-white border border-dark-600 hover:border-slate-500 bg-dark-800 hover:bg-dark-700 px-4 py-2 rounded-full transition-all"
+              onClick={() => onSelectSymbol(lastSymbol)}
+              className="flex items-center gap-2 text-xs text-cyan-400 hover:text-cyan-300 border border-cyan-500/30 hover:border-cyan-400/60 bg-cyan-500/5 hover:bg-cyan-500/10 px-4 py-2 rounded-full transition-all"
             >
-              {label}
+              <span>↩ Reprendre</span>
+              <LastSymbolBadge symbol={lastSymbol} />
             </button>
-          ))}
+          )}
+          <button
+            onClick={onOpenSearch}
+            className="text-xs text-slate-500 hover:text-white border border-dark-600 hover:border-slate-500 bg-dark-800 hover:bg-dark-700 px-4 py-2 rounded-full transition-all"
+          >
+            🔍 Rechercher une valeur
+            <span className="ml-2 text-slate-700 font-mono text-[10px]">⌘K</span>
+          </button>
+          <button
+            onClick={() => onNavigate('news')}
+            className="text-xs text-slate-500 hover:text-white border border-dark-600 hover:border-slate-500 bg-dark-800 hover:bg-dark-700 px-4 py-2 rounded-full transition-all"
+          >
+            📰 Actualités
+          </button>
+          <button
+            onClick={() => onNavigate('portfolio')}
+            className="text-xs text-slate-500 hover:text-white border border-dark-600 hover:border-slate-500 bg-dark-800 hover:bg-dark-700 px-4 py-2 rounded-full transition-all"
+          >
+            💼 Mon Portfolio
+          </button>
         </div>
 
         <p className="text-[10px] text-slate-700 text-center font-mono">

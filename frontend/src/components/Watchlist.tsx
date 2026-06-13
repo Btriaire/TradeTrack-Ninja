@@ -101,13 +101,28 @@ function SectionHeader({ icon: Icon, label, count, color }: {
 
 /* ─── Composant principal ───────────────────────────────────────────────── */
 export function Watchlist({ selected, onSelect, items, onAdd, onRemove, positions }: Props) {
-  const [input, setInput] = useState('')
+  const [input,    setInput]    = useState('')
+  const [addError, setAddError] = useState<string | null>(null)
 
   const add = () => {
     const sym = input.trim().toUpperCase()
-    if (!sym || items.find(i => i.symbol === sym)) return
+    if (!sym) return
+
+    // Feedback si déjà présent
+    if (items.find(i => i.symbol === sym)) {
+      setAddError('Déjà dans la watchlist')
+      setTimeout(() => setAddError(null), 2500)
+      return
+    }
+    if (positions.some(p => p.symbol === sym)) {
+      setAddError('Déjà en portefeuille')
+      setTimeout(() => setAddError(null), 2500)
+      return
+    }
+
     onAdd({ symbol: sym, name: sym })
     setInput('')
+    setAddError(null)
   }
 
   // Dédupliquer : ne pas afficher dans watchlist ce qui est déjà en portfolio
@@ -161,20 +176,31 @@ export function Watchlist({ selected, onSelect, items, onAdd, onRemove, position
         <SectionHeader icon={Eye} label="Valeurs suivies" count={watchlistOnly.length} color="text-slate-400" />
 
         {/* Input ajout */}
-        <div className="flex gap-1 mb-2">
-          <input
-            value={input}
-            onChange={e => setInput(e.target.value)}
-            onKeyDown={e => e.key === 'Enter' && add()}
-            placeholder="Ex: SAN.PA"
-            className="flex-1 bg-dark-700 text-white text-xs rounded-lg px-3 py-1.5 outline-none border border-dark-600 focus:border-accent-blue/50 placeholder:text-slate-600"
-          />
-          <button
-            onClick={add}
-            className="bg-accent-blue hover:bg-blue-600 text-white rounded-lg px-2 py-1.5 transition-colors"
-          >
-            <Plus size={14} />
-          </button>
+        <div className="mb-2">
+          <div className="flex gap-1">
+            <input
+              value={input}
+              onChange={e => { setInput(e.target.value); setAddError(null) }}
+              onKeyDown={e => e.key === 'Enter' && add()}
+              placeholder="Ex: SAN.PA"
+              className={`flex-1 bg-dark-700 text-white text-xs rounded-lg px-3 py-1.5 outline-none border transition-colors placeholder:text-slate-600 ${
+                addError
+                  ? 'border-amber-500/60 focus:border-amber-500'
+                  : 'border-dark-600 focus:border-accent-blue/50'
+              }`}
+            />
+            <button
+              onClick={add}
+              className="bg-accent-blue hover:bg-blue-600 text-white rounded-lg px-2 py-1.5 transition-colors"
+            >
+              <Plus size={14} />
+            </button>
+          </div>
+          {addError && (
+            <p className="text-[10px] text-amber-400/80 font-mono mt-1 px-1 animate-fade-in">
+              ⚠ {addError}
+            </p>
+          )}
         </div>
 
         <div className="flex flex-col gap-0.5">

@@ -42,6 +42,17 @@ import { useLayout }      from './hooks/useLayout'
 import { getHistory, getIndicators, getQuote, getNews, getIndices, getGeoEvents, getTopSectors, getGameOfDay, pingBackend } from './services/api'
 import { Logo } from './components/Logo'
 
+// ── Fallback Suspense — défini HORS du composant pour éviter le remount à chaque render
+function LazyFallback() {
+  return (
+    <div className="flex items-center justify-center py-16 gap-3">
+      <div className="w-4 h-4 rounded-full bg-accent-blue/40 animate-pulse" style={{ animationDelay: '0ms' }}/>
+      <div className="w-4 h-4 rounded-full bg-accent-blue/40 animate-pulse" style={{ animationDelay: '150ms' }}/>
+      <div className="w-4 h-4 rounded-full bg-accent-blue/40 animate-pulse" style={{ animationDelay: '300ms' }}/>
+    </div>
+  )
+}
+
 // ── Vues globales (pas liées à une valeur) ────────────────────────────────────
 type GlobalView = 'welcome' | 'dashboard' | 'stock' | 'markets' | 'signals' | 'news' | 'portfolio'
 
@@ -103,6 +114,10 @@ export default function App() {
   const [sidebarOpen,  setSidebarOpen]  = useState(false)
   const [searchOpen,   setSearchOpen]   = useState(false)
   const [showIntraday, setShowIntraday] = useState(false)
+  // Dernier symbole visité — persisté pour le bouton "Reprendre" de la WelcomePage
+  const [lastSymbol,   setLastSymbol]   = useState<string | null>(() => {
+    try { return localStorage.getItem('tt_last_symbol') } catch { return null }
+  })
 
   const queryClient = useQueryClient()
   const { user }                                         = useAuth()
@@ -157,21 +172,12 @@ export default function App() {
 
   const handleSelectSymbol = (s: string) => {
     setSymbol(s)
+    setLastSymbol(s)
+    try { localStorage.setItem('tt_last_symbol', s) } catch {}
     setGlobalView('stock')
     setActiveTab('chart')
     setShowIntraday(false)
     if (isMobile) setSidebarOpen(false)
-  }
-
-  // Fallback Suspense léger — affiché pendant le chargement d'un chunk lazy
-  function LazyFallback() {
-    return (
-      <div className="flex items-center justify-center py-16 gap-3">
-        <div className="w-4 h-4 rounded-full bg-accent-blue/40 animate-pulse" style={{ animationDelay: '0ms' }}/>
-        <div className="w-4 h-4 rounded-full bg-accent-blue/40 animate-pulse" style={{ animationDelay: '150ms' }}/>
-        <div className="w-4 h-4 rounded-full bg-accent-blue/40 animate-pulse" style={{ animationDelay: '300ms' }}/>
-      </div>
-    )
   }
 
   function LayoutToggle() {
@@ -237,14 +243,6 @@ export default function App() {
             const isActive = globalView === id
             const isPortfolio = id === 'portfolio'
 
-            // Calcul P&L pour le badge portfolio
-            const portfolioPnlPct = (() => {
-              if (!isPortfolio || positions.length === 0) return null
-              const cost = positions.reduce((s: number, p: any) => s + (p.buy_price ?? 0) * (p.quantity ?? 0), 0)
-              const val  = positions.reduce((s: number, p: any) => s + (p.buy_price ?? 0) * (p.quantity ?? 0), 0)
-              return cost > 0 ? ((val - cost) / cost) * 100 : null
-            })()
-
             const activeClass = isActive
               ? id === 'markets'   ? 'bg-blue-500/20   text-blue-400   border border-blue-500/30'
               : id === 'signals'   ? 'bg-yellow-500/20 text-yellow-400 border border-yellow-500/30'
@@ -304,12 +302,27 @@ export default function App() {
       {/* ── Barre des indices ────────────────────────────────────────────── */}
       <IndicesBar />
 
-      {/* ── Banners (masquées sur le Dashboard qui les intègre déjà) ───── */}
-      {globalView !== 'dashboard' && (
+      {/* ── Banners contextuels ─────────────────────────────────────────
+           • welcome  : tout afficher (vue de synthèse)
+           • stock    : GameOfDay (inspiration valeurs)
+           • markets  : TopSectors (contexte sectoriel)
+           • dashboard : déjà intégré dans le Dashboard
+           • signals/news/portfolio : pas de banners (contenu dédié) ── */}
+      {globalView === 'welcome' && (
         <Suspense fallback={null}>
           <GameOfDay onSelectSymbol={handleSelectSymbol} />
           <TopSectors onSelectSymbol={handleSelectSymbol} />
           <GeoEvents />
+        </Suspense>
+      )}
+      {globalView === 'stock' && (
+        <Suspense fallback={null}>
+          <GameOfDay onSelectSymbol={handleSelectSymbol} />
+        </Suspense>
+      )}
+      {globalView === 'markets' && (
+        <Suspense fallback={null}>
+          <TopSectors onSelectSymbol={handleSelectSymbol} />
         </Suspense>
       )}
 
@@ -354,6 +367,7 @@ export default function App() {
           {globalView === 'welcome' && (
             <WelcomePage
               positions={positions}
+              lastSymbol={lastSymbol}
               onNavigate={v => setGlobalView(v as GlobalView)}
               onOpenSearch={() => setSearchOpen(true)}
               onSelectSymbol={handleSelectSymbol}
@@ -469,7 +483,10 @@ export default function App() {
               {activeTab === 'diagnostic' && (
                 <DiagnosticPanel
                   symbol={symbol}
-                  name={SYMBOL_META[symbol]?.name || symbol}
+                  name={SYMBOL_META[symbol]?.name
+                    || watchlistItems.find(i => i.symbol === symbol)?.name
+                    || positions.find(p => p.symbol === symbol)?.name
+                    || symbol}
                   sector={SYMBOL_META[symbol]?.sector || ''}
                   index={SYMBOL_META[symbol]?.index || ''}
                   candles={candles}
@@ -483,7 +500,10 @@ export default function App() {
               {activeTab === 'cloture' && (
                 <CloturePanel
                   symbol={symbol}
-                  name={SYMBOL_META[symbol]?.name || symbol}
+                  name={SYMBOL_META[symbol]?.name
+                    || watchlistItems.find(i => i.symbol === symbol)?.name
+                    || positions.find(p => p.symbol === symbol)?.name
+                    || symbol}
                   sector={SYMBOL_META[symbol]?.sector || ''}
                   index={SYMBOL_META[symbol]?.index || ''}
                   candles={candles}

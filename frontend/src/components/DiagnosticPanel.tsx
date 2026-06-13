@@ -1,4 +1,4 @@
-import { useState } from 'react'
+import { useState, Component, type ReactNode } from 'react'
 import { useMutation, useQuery } from '@tanstack/react-query'
 import {
   Activity, AlertTriangle, TrendingUp, TrendingDown,
@@ -7,6 +7,35 @@ import {
 } from 'lucide-react'
 import { analyzeDiagnostic, getTargets } from '../services/api'
 import type { Candle, Indicators, Article } from '../types'
+
+// ── Error Boundary — empêche un crash React de noircir tout l'écran ─────────
+class DiagnosticErrorBoundary extends Component<
+  { children: ReactNode },
+  { error: Error | null }
+> {
+  state = { error: null as Error | null }
+
+  static getDerivedStateFromError(e: Error) { return { error: e } }
+
+  render() {
+    if (this.state.error) {
+      return (
+        <div className="bg-red-500/10 border border-red-500/30 rounded-xl p-6 text-center space-y-3">
+          <AlertTriangle size={28} className="text-red-400 mx-auto opacity-70"/>
+          <p className="text-sm text-red-400 font-mono">Erreur d'affichage du diagnostic</p>
+          <p className="text-xs text-slate-600 font-mono">{this.state.error.message}</p>
+          <button
+            onClick={() => this.setState({ error: null })}
+            className="text-xs text-red-400 hover:text-red-300 border border-red-500/30 hover:border-red-400/50 px-4 py-1.5 rounded-lg transition-colors"
+          >
+            Réessayer
+          </button>
+        </div>
+      )
+    }
+    return this.props.children
+  }
+}
 
 interface Props {
   symbol:     string
@@ -303,8 +332,8 @@ function AnalystConsensus({ symbol }: { symbol: string }) {
   )
 }
 
-// ── Composant principal ───────────────────────────────────────────────────────
-export function DiagnosticPanel({ symbol, name, sector, index, candles, indicators, articles }: Props) {
+// ── Composant interne ─────────────────────────────────────────────────────────
+function DiagnosticPanelInner({ symbol, name, sector, index, candles, indicators, articles }: Props) {
   const [result,      setResult]      = useState<DiagResult | null>(null)
   const [showExplain, setShowExplain] = useState(false)
   const [withExplain, setWithExplain] = useState(false)
@@ -563,12 +592,21 @@ export function DiagnosticPanel({ symbol, name, sector, index, candles, indicato
         </div>
       )}
 
-      {/* Erreur */}
+      {/* Erreur mutation */}
       {mutation.isError && (
         <div className="bg-red-500/10 border border-red-500/30 rounded-xl p-4 text-sm text-red-400">
           Erreur lors de l'analyse. Vérifiez la connexion au backend.
         </div>
       )}
     </div>
+  )
+}
+
+// ── Export public — enveloppé dans l'Error Boundary ──────────────────────────
+export function DiagnosticPanel(props: Props) {
+  return (
+    <DiagnosticErrorBoundary>
+      <DiagnosticPanelInner {...props} />
+    </DiagnosticErrorBoundary>
   )
 }
