@@ -99,7 +99,7 @@ def _cached_news(key, builder):
         _NEWS_CACHE[key] = (time.time(), data)
     return data
 
-def fetch_many(sources_dict, with_meta=False, budget=8.0):
+def fetch_many(sources_dict, with_meta=False, budget=6.0):
     """Fetch RSS en parallèle avec un budget global (s). Au-delà du budget,
     on renvoie ce qui est prêt et on abandonne les sources lentes — garantit
     un retour < limite Vercel (10s) même si une source bloque (IP cloud)."""
