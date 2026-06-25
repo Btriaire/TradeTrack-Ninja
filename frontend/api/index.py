@@ -5,7 +5,7 @@ ce qui évite le bug de routing des catch-all imbriqués [...slug].py
 (qui ne matchaient qu'un seul segment de chemin).
 """
 from http.server import BaseHTTPRequestHandler
-import json, sys, os, random, re
+import json, sys, os, random, re, time
 from datetime import datetime
 from urllib.parse import urlparse
 import httpx
@@ -70,11 +70,11 @@ RSS_HEADERS = {"User-Agent":"Mozilla/5.0 Chrome/120.0.0.0 Safari/537.36",
 def fetch_rss(name, url, cat="Général", flag="🌍"):
     try:
         import feedparser
-        r = httpx.get(url, headers=RSS_HEADERS, timeout=6, follow_redirects=True)
+        r = httpx.get(url, headers=RSS_HEADERS, timeout=5, follow_redirects=True)
         if r.status_code >= 400: return []
         feed = feedparser.parse(r.text)
         arts = []
-        for e in feed.entries[:15]:
+        for e in feed.entries[:12]:
             title = e.get("title","").strip()
             if not title: continue
             summary = re.sub(r"<[^>]+>"," ", e.get("summary", e.get("description",""))).strip()
@@ -86,20 +86,38 @@ def fetch_rss(name, url, cat="Général", flag="🌍"):
     except Exception:
         return []
 
-def fetch_many(sources_dict, with_meta=False):
-    from concurrent.futures import ThreadPoolExecutor, as_completed
+# ── Cache news (réutilisé par les invocations "warm" de la fonction) ───────────
+_NEWS_CACHE = {}
+_NEWS_TTL = 600  # 10 min
+
+def _cached_news(key, builder):
+    e = _NEWS_CACHE.get(key)
+    if e and (time.time() - e[0]) < _NEWS_TTL:
+        return e[1]
+    data = builder()
+    if data:
+        _NEWS_CACHE[key] = (time.time(), data)
+    return data
+
+def fetch_many(sources_dict, with_meta=False, budget=8.0):
+    """Fetch RSS en parallèle avec un budget global (s). Au-delà du budget,
+    on renvoie ce qui est prêt et on abandonne les sources lentes — garantit
+    un retour < limite Vercel (10s) même si une source bloque (IP cloud)."""
+    from concurrent.futures import ThreadPoolExecutor, as_completed, TimeoutError as FTimeout
+    pool = ThreadPoolExecutor(max_workers=max(8, len(sources_dict)))
+    if with_meta:
+        futs = [pool.submit(fetch_rss, name, url, cat, flag)
+                for name,(url,cat,flag) in sources_dict.items()]
+    else:
+        futs = [pool.submit(fetch_rss, name, url) for name,url in sources_dict.items()]
     all_arts = []
-    # tous en parallèle (1 worker / source) pour rester < 10s (limite Vercel)
-    with ThreadPoolExecutor(max_workers=max(8, len(sources_dict))) as pool:
-        if with_meta:
-            futs = {pool.submit(fetch_rss, name, url, cat, flag): name
-                    for name,(url,cat,flag) in sources_dict.items()}
-        else:
-            futs = {pool.submit(fetch_rss, name, url): name
-                    for name,url in sources_dict.items()}
-        for f in as_completed(futs):
+    try:
+        for f in as_completed(futs, timeout=budget):
             try: all_arts.extend(f.result())
             except Exception: pass
+    except FTimeout:
+        pass  # budget dépassé : on garde ce qui est arrivé
+    pool.shutdown(wait=False, cancel_futures=True)
     all_arts.sort(key=lambda x: x["date"], reverse=True)
     return all_arts
 
@@ -341,7 +359,7 @@ class handler(BaseHTTPRequestHandler):
         sub = segs[0] if segs and segs[0] else ""
         if sub == "general":
             cat = params.get("category","Tout")
-            arts = fetch_many(SOURCES_GENERAL, with_meta=True)
+            arts = _cached_news("general", lambda: fetch_many(SOURCES_GENERAL, with_meta=True))
             if cat and cat != "Tout":
                 arts = [a for a in arts if a.get("category") == cat]
             return self._send(arts)
@@ -349,7 +367,7 @@ class handler(BaseHTTPRequestHandler):
             url = params.get("url","")
             return self._send({"url":url,"content":"","title":"","image":None,"author":None,"sitename":""})
         sym = params.get("symbol","")
-        arts = fetch_many(SOURCES_PRIMARY)
+        arts = _cached_news("primary", lambda: fetch_many(SOURCES_PRIMARY))
         if sym:
             ticker = sym.split(".")[0].lower()
             filtered = [a for a in arts if ticker in (a["title"]+a.get("summary","")).lower()]
