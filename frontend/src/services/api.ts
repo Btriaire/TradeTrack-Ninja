@@ -4,7 +4,11 @@ import type {
   AIAnalysis, SearchResult, MarketIndex,
 } from '../types'
 
-const BASE_URL = import.meta.env.VITE_API_URL ?? '/api'
+// Backend = fonctions serverless Vercel servies au même origin sous /api.
+// En dev, le proxy Vite redirige /api → http://localhost:8000 (voir vite.config.ts).
+// On ignore VOLONTAIREMENT VITE_API_URL : une ancienne valeur (Render suspendu,
+// définie dans le dashboard Vercel) écrasait .env.production et cassait la prod.
+const BASE_URL = '/api'
 const api = axios.create({ baseURL: BASE_URL })
 
 export const getQuote = (symbol: string): Promise<Quote> =>
