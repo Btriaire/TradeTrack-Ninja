@@ -70,7 +70,7 @@ RSS_HEADERS = {"User-Agent":"Mozilla/5.0 Chrome/120.0.0.0 Safari/537.36",
 def fetch_rss(name, url, cat="Général", flag="🌍"):
     try:
         import feedparser
-        r = httpx.get(url, headers=RSS_HEADERS, timeout=8, follow_redirects=True)
+        r = httpx.get(url, headers=RSS_HEADERS, timeout=6, follow_redirects=True)
         if r.status_code >= 400: return []
         feed = feedparser.parse(r.text)
         arts = []
@@ -89,7 +89,8 @@ def fetch_rss(name, url, cat="Général", flag="🌍"):
 def fetch_many(sources_dict, with_meta=False):
     from concurrent.futures import ThreadPoolExecutor, as_completed
     all_arts = []
-    with ThreadPoolExecutor(max_workers=6) as pool:
+    # tous en parallèle (1 worker / source) pour rester < 10s (limite Vercel)
+    with ThreadPoolExecutor(max_workers=max(8, len(sources_dict))) as pool:
         if with_meta:
             futs = {pool.submit(fetch_rss, name, url, cat, flag): name
                     for name,(url,cat,flag) in sources_dict.items()}
@@ -105,6 +106,80 @@ def fetch_many(sources_dict, with_meta=False):
 # ── Données signals ───────────────────────────────────────────────────────────
 WATCHLIST = ["MC.PA","TTE.PA","AIR.PA","BNP.PA","SAN.PA","OR.PA","DSY.PA","CAP.PA",
     "AAPL","MSFT","NVDA","GOOGL","TSLA","META","AMZN","SAP.DE","ASML.AS","SIE.DE"]
+
+# symbole → (nom, indice, drapeau) — univers scanné par /signals/daily
+SIGNAL_UNIVERSE = {
+    "MC.PA":("LVMH","CAC 40","🇫🇷"),       "TTE.PA":("TotalEnergies","CAC 40","🇫🇷"),
+    "AIR.PA":("Airbus","CAC 40","🇫🇷"),     "BNP.PA":("BNP Paribas","CAC 40","🇫🇷"),
+    "OR.PA":("L'Oréal","CAC 40","🇫🇷"),     "SAN.PA":("Sanofi","CAC 40","🇫🇷"),
+    "DG.PA":("Vinci","CAC 40","🇫🇷"),       "CAP.PA":("Capgemini","CAC 40","🇫🇷"),
+    "AAPL":("Apple","NASDAQ","🇺🇸"),        "MSFT":("Microsoft","NASDAQ","🇺🇸"),
+    "NVDA":("Nvidia","NASDAQ","🇺🇸"),       "GOOGL":("Alphabet","NASDAQ","🇺🇸"),
+    "AMZN":("Amazon","NASDAQ","🇺🇸"),       "META":("Meta","NASDAQ","🇺🇸"),
+    "TSLA":("Tesla","NASDAQ","🇺🇸"),        "SAP.DE":("SAP","DAX","🇩🇪"),
+    "SIE.DE":("Siemens","DAX","🇩🇪"),       "ASML.AS":("ASML","AEX","🇳🇱"),
+}
+
+def _signal_card(sym):
+    """Calcule une carte de signal (scoring technique) pour un symbole."""
+    name, index, country = SIGNAL_UNIVERSE.get(sym, (sym, "", "🌍"))
+    q = yf_quote(sym)
+    price = q.get("price")
+    if not price:
+        return None
+    ind = yf_indicators(sym)
+    if not ind:
+        return None
+    rsi = ind.get("rsi", 50) or 50
+    macd = ind.get("macd", 0) or 0
+    msig = ind.get("macd_signal", 0) or 0
+    sma20 = ind.get("sma20"); sma50 = ind.get("sma50")
+    bb_up = ind.get("bb_upper"); bb_lo = ind.get("bb_lower")
+    change = q.get("change_pct", 0) or 0
+    buy = sell = 0; tags = []
+    if rsi < 35:  buy += 1;  tags.append("Survente")
+    elif rsi > 65: sell += 1; tags.append("Surachat")
+    if macd > msig: buy += 1;  tags.append("MACD ↑")
+    elif macd < msig: sell += 1; tags.append("MACD ↓")
+    if sma20 and sma50:
+        if sma20 > sma50: buy += 1;  tags.append("Tendance ↑")
+        else:             sell += 1; tags.append("Tendance ↓")
+    if buy >= sell and buy >= 1:
+        side, score = "buy", buy
+        signal = "HAUSSIER"
+        pot = round((bb_up - price) / price * 100, 1) if bb_up and bb_up > price else round(buy * 3.0, 1)
+        reason = "Configuration acheteuse : " + ", ".join(tags[:3]).lower() if tags else "Signal technique haussier"
+    elif sell > buy and sell >= 1:
+        side, score = "sell", sell
+        signal = "BAISSIER"
+        pot = round((bb_lo - price) / price * 100, 1) if bb_lo and bb_lo < price else round(-sell * 3.0, 1)
+        reason = "Configuration vendeuse : " + ", ".join(tags[:3]).lower() if tags else "Signal technique baissier"
+    else:
+        return None
+    return {"side": side, "card": {
+        "symbol": sym, "name": name, "index": index, "country": country,
+        "price": price, "change_pct": change, "score": score, "rsi": rsi,
+        "tags": tags, "potential_pct": pot, "horizon": "2-10 j",
+        "signal": signal, "reason": reason}}
+
+def compute_daily_signals():
+    from concurrent.futures import ThreadPoolExecutor, as_completed
+    great, away = [], []
+    syms = list(SIGNAL_UNIVERSE.keys())
+    with ThreadPoolExecutor(max_workers=len(syms)) as pool:
+        futs = [pool.submit(_signal_card, s) for s in syms]
+        for f in as_completed(futs):
+            try:
+                r = f.result()
+                if not r: continue
+                (great if r["side"] == "buy" else away).append(r["card"])
+            except Exception:
+                pass
+    great.sort(key=lambda c: (c["score"], c["potential_pct"]), reverse=True)
+    away.sort(key=lambda c: (c["score"], -c["potential_pct"]), reverse=True)
+    return {"great_catch": great, "stay_away": away,
+            "universe_size": len(syms), "generating": False,
+            "generated_at": datetime.now().isoformat()}
 SECTOR_ETFS = {"Technologie":"XLK","Énergie":"XLE","Finance":"XLF","Santé":"XLV",
     "Consommation":"XLY","Industrie":"XLI","Luxe & Mode":"MC.PA","Chimie":"AI.PA","Infrastructures":"DG.PA"}
 GEO_EVENTS = [
@@ -320,7 +395,7 @@ class handler(BaseHTTPRequestHandler):
                     "price":None,"change_pct":None,"score":0,"reason":"Indisponible","signal":"NEUTRE"}
             return self._send(game)
         if sub == "daily":
-            return self._send({"great_catch":[],"stay_away":[],"generated_at":""})
+            return self._send(compute_daily_signals())
         self._send({"error":"not found"}, 404)
 
     # ── Analyse IA ──────────────────────────────────────────────────────────
