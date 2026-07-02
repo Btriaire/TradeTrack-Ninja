@@ -1,12 +1,13 @@
-import { useState, useEffect, useRef } from 'react'
+import { useState, useEffect, useRef, type ReactNode } from 'react'
 import { useQuery } from '@tanstack/react-query'
 import {
   Trash2, TrendingUp, TrendingDown, PieChart, Plus,
-  ChevronDown, ChevronUp, Undo2, ChevronRight, Receipt, Pencil,
+  ChevronDown, ChevronUp, Undo2, ChevronRight, Receipt, Pencil, Banknote,
 } from 'lucide-react'
 import { getQuote } from '../services/api'
 import { isPeaEligible } from '../utils/lcl-fees'
 import { PositionEditForm } from './PositionEditForm'
+import { SellPositionForm, type SellResult } from './SellPositionForm'
 import type { PortfolioPosition } from '../types'
 
 // ── Helpers ────────────────────────────────────────────────────────────────────
@@ -18,8 +19,8 @@ function fmtPct(v: number) {
 }
 
 // ── Toast Annuler ─────────────────────────────────────────────────────────────
-function UndoToast({ symbol, onUndo, onDone }: {
-  symbol: string; onUndo: () => void; onDone: () => void
+function UndoToast({ symbol, label, onUndo, onDone }: {
+  symbol: string; label?: ReactNode; onUndo: () => void; onDone: () => void
 }) {
   const [pct, setPct] = useState(100)
   const timerRef = useRef<ReturnType<typeof setInterval> | null>(null)
@@ -40,7 +41,7 @@ function UndoToast({ symbol, onUndo, onDone }: {
     <div className="relative flex items-center gap-3 bg-dark-600 border border-dark-500 rounded-xl px-4 py-3 shadow-xl overflow-hidden">
       <Trash2 size={14} className="text-red-400 shrink-0" />
       <span className="text-xs font-mono text-slate-300 flex-1">
-        <span className="font-bold text-white">{symbol}</span> retiré du portfolio
+        {label ?? <><span className="font-bold text-white">{symbol}</span> retiré du portfolio</>}
       </span>
       <button
         onClick={() => { clearInterval(timerRef.current!); onUndo() }}
@@ -62,12 +63,13 @@ function PositionRow({
   pos, onRemove, onUpdate, onSelect,
 }: {
   pos: PortfolioPosition
-  onRemove: (id: string) => void
+  onRemove: (id: string, label?: ReactNode) => void
   onUpdate: (id: string, patch: Partial<PortfolioPosition>) => void
   onSelect: (symbol: string) => void
 }) {
   const [expanded, setExpanded] = useState(false)
   const [editing, setEditing] = useState(false)
+  const [selling, setSelling] = useState(false)
 
   const { data: quote } = useQuery({
     queryKey:        ['quote', pos.symbol],
@@ -183,7 +185,17 @@ function PositionRow({
         {/* Boutons d'action */}
         <div className="flex items-stretch border-l border-dark-700/50">
           <button
-            onClick={e => { e.stopPropagation(); setEditing(true) }}
+            onClick={e => { e.stopPropagation(); setSelling(true); setEditing(false) }}
+            className="shrink-0 flex items-center justify-center px-3 self-stretch
+              text-slate-600 hover:text-amber-400 hover:bg-amber-500/20
+              border-r border-dark-700/30 transition-all duration-150 group"
+            title={`Vendre ${pos.symbol}`}
+          >
+            <Banknote size={15} className="group-hover:scale-110 transition-transform" />
+          </button>
+
+          <button
+            onClick={e => { e.stopPropagation(); setEditing(true); setSelling(false) }}
             className="shrink-0 flex items-center justify-center px-3 self-stretch
               text-slate-600 hover:text-accent-blue hover:bg-accent-blue/20
               border-r border-dark-700/30 transition-all duration-150 group"
@@ -204,8 +216,36 @@ function PositionRow({
         </div>
       </div>
 
+      {/* ── Formulaire vente ──────────────────────────────────────────────── */}
+      {selling && (
+        <SellPositionForm
+          pos={pos}
+          livePrice={hasQuote ? currentPrice : null}
+          onConfirm={(result: SellResult) => {
+            if (result.full) {
+              onRemove(
+                pos.id,
+                <>
+                  <span className="font-bold text-white">{pos.symbol}</span> vendu à {result.sellPrice.toFixed(2)} €
+                  <span className={result.realizedPnl >= 0 ? 'text-emerald-400' : 'text-red-400'}>
+                    {' '}· {result.realizedPnl >= 0 ? '+' : '−'}{fmtEur(Math.abs(result.realizedPnl), 2)} réalisé
+                  </span>
+                </>,
+              )
+            } else {
+              onUpdate(pos.id, {
+                quantity: result.remainingQty,
+                fees: result.remainingFees > 0 ? result.remainingFees : undefined,
+              })
+            }
+            setSelling(false)
+          }}
+          onCancel={() => setSelling(false)}
+        />
+      )}
+
       {/* ── Formulaire édition ────────────────────────────────────────────── */}
-      {editing && (
+      {editing && !selling && (
         <PositionEditForm
           pos={pos}
           livePrice={currentPrice}
@@ -218,7 +258,7 @@ function PositionRow({
       )}
 
       {/* ── Détail dépliable ──────────────────────────────────────────────── */}
-      {expanded && !editing && (
+      {expanded && !editing && !selling && (
         <div className={`mx-3 mb-3 mt-1 rounded-xl border px-4 py-3 ${greenBg}`}>
           <div className="grid grid-cols-3 gap-4 text-xs font-mono">
 
@@ -289,7 +329,7 @@ interface Props {
 
 export function Portfolio({ positions, onRemove, onUpdate, onSelect, onOpenSearch, user }: Props) {
   const [collapsed, setCollapsed] = useState(false)
-  const [pending,   setPending]   = useState<{ id: string; symbol: string } | null>(null)
+  const [pending,   setPending]   = useState<{ id: string; symbol: string; label?: ReactNode } | null>(null)
 
   // Prix actuels pour le résumé global
   const { data: quotes } = useQuery({
@@ -321,10 +361,10 @@ export function Portfolio({ positions, onRemove, onUpdate, onSelect, onOpenSearc
   const totalPct   = totalCostBasis > 0 ? (totalPnl / totalCostBasis) * 100 : 0
   const globalUp   = totalPnl >= 0
 
-  function handleRemove(id: string) {
+  function handleRemove(id: string, label?: ReactNode) {
     const pos = positions.find(p => p.id === id)
     if (!pos) return
-    setPending({ id, symbol: pos.symbol })
+    setPending({ id, symbol: pos.symbol, label })
   }
   function confirmRemove() { if (pending) { onRemove(pending.id); setPending(null) } }
   function cancelRemove()  { setPending(null) }
@@ -421,7 +461,7 @@ export function Portfolio({ positions, onRemove, onUpdate, onSelect, onOpenSearc
       {/* ── Toast Annuler ─────────────────────────────────────────────────── */}
       {pending && (
         <div className="px-4 pb-3 pt-2">
-          <UndoToast symbol={pending.symbol} onUndo={cancelRemove} onDone={confirmRemove} />
+          <UndoToast symbol={pending.symbol} label={pending.label} onUndo={cancelRemove} onDone={confirmRemove} />
         </div>
       )}
     </div>

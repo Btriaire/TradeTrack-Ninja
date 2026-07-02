@@ -7,11 +7,12 @@ import { useState, useMemo } from 'react'
 import { useQuery } from '@tanstack/react-query'
 import {
   PieChart, Plus, Trash2,
-  ChevronRight, Receipt, PackagePlus, Check, Zap, Pencil,
+  ChevronRight, Receipt, PackagePlus, Check, Zap, Pencil, Banknote,
 } from 'lucide-react'
 import { getQuote } from '../services/api'
 import { calcLclFees, calcBreakeven } from '../utils/lcl-fees'
 import { PositionEditForm } from './PositionEditForm'
+import { SellPositionForm, type SellResult } from './SellPositionForm'
 import type { PortfolioPosition } from '../types'
 
 // ── Helpers ────────────────────────────────────────────────────────────────────
@@ -33,6 +34,7 @@ function LotRow({
 }) {
   const [expanded, setExpanded] = useState(false)
   const [editing, setEditing] = useState(false)
+  const [selling, setSelling] = useState(false)
 
   const fees       = pos.fees ?? 0
   const costBasis  = pos.buy_price * pos.quantity + fees
@@ -93,7 +95,17 @@ function LotRow({
         {/* Boutons d'action */}
         <div className="flex items-stretch border-l border-dark-700/40">
           <button
-            onClick={() => setEditing(true)}
+            onClick={() => { setSelling(true); setEditing(false) }}
+            className="shrink-0 flex items-center justify-center px-3 self-stretch
+              text-slate-600 hover:text-amber-400 hover:bg-amber-500/20
+              border-r border-dark-700/30 transition-all duration-150 group"
+            title="Vendre cette ligne"
+          >
+            <Banknote size={14} className="group-hover:scale-110 transition-transform" />
+          </button>
+
+          <button
+            onClick={() => { setEditing(true); setSelling(false) }}
             className="shrink-0 flex items-center justify-center px-3 self-stretch
               text-slate-600 hover:text-accent-blue hover:bg-accent-blue/20
               border-r border-dark-700/30 transition-all duration-150 group"
@@ -114,8 +126,28 @@ function LotRow({
         </div>
       </div>
 
+      {/* Formulaire vente */}
+      {selling && (
+        <SellPositionForm
+          pos={pos}
+          livePrice={livePrice}
+          onConfirm={(result: SellResult) => {
+            if (result.full) {
+              onRemove(pos.id)
+            } else {
+              onUpdate(pos.id, {
+                quantity: result.remainingQty,
+                fees: result.remainingFees > 0 ? result.remainingFees : undefined,
+              })
+            }
+            setSelling(false)
+          }}
+          onCancel={() => setSelling(false)}
+        />
+      )}
+
       {/* Formulaire édition */}
-      {editing && (
+      {editing && !selling && (
         <PositionEditForm
           pos={pos}
           livePrice={livePrice}
@@ -128,7 +160,7 @@ function LotRow({
       )}
 
       {/* Détail dépliable */}
-      {expanded && !editing && (
+      {expanded && !editing && !selling && (
         <div className={`mx-3 mb-3 mt-1 rounded-xl border px-4 py-3 text-xs font-mono ${bgCol}`}>
           <div className="grid grid-cols-3 gap-4">
             <div>
