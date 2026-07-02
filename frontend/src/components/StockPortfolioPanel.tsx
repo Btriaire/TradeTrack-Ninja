@@ -7,10 +7,11 @@ import { useState, useMemo } from 'react'
 import { useQuery } from '@tanstack/react-query'
 import {
   PieChart, Plus, Trash2,
-  ChevronRight, Receipt, PackagePlus, Check, Zap,
+  ChevronRight, Receipt, PackagePlus, Check, Zap, Pencil,
 } from 'lucide-react'
 import { getQuote } from '../services/api'
 import { calcLclFees, calcBreakeven } from '../utils/lcl-fees'
+import { PositionEditForm } from './PositionEditForm'
 import type { PortfolioPosition } from '../types'
 
 // ── Helpers ────────────────────────────────────────────────────────────────────
@@ -23,13 +24,15 @@ function fmtPct(v: number) {
 
 // ── Ligne d'un lot ─────────────────────────────────────────────────────────────
 function LotRow({
-  pos, livePrice, onRemove,
+  pos, livePrice, onRemove, onUpdate,
 }: {
   pos: PortfolioPosition
   livePrice: number
   onRemove: (id: string) => void
+  onUpdate: (id: string, patch: Partial<PortfolioPosition>) => void
 }) {
   const [expanded, setExpanded] = useState(false)
+  const [editing, setEditing] = useState(false)
 
   const fees       = pos.fees ?? 0
   const costBasis  = pos.buy_price * pos.quantity + fees
@@ -87,6 +90,17 @@ function LotRow({
           <ChevronRight size={9} className={`mt-1 opacity-30 transition-transform ${expanded ? 'rotate-90' : ''} ${col}`} />
         </button>
 
+        {/* Éditer */}
+        <button
+          onClick={() => setEditing(true)}
+          className="shrink-0 w-9 flex items-center justify-center self-stretch
+            text-slate-700 hover:text-white hover:bg-accent-blue/80
+            border-l border-dark-700/40 transition-all"
+          title="Éditer cette ligne"
+        >
+          <Pencil size={13} />
+        </button>
+
         {/* Supprimer */}
         <button
           onClick={() => onRemove(pos.id)}
@@ -99,8 +113,21 @@ function LotRow({
         </button>
       </div>
 
+      {/* Formulaire édition */}
+      {editing && (
+        <PositionEditForm
+          pos={pos}
+          livePrice={livePrice}
+          onSave={patch => {
+            onUpdate(pos.id, patch)
+            setEditing(false)
+          }}
+          onCancel={() => setEditing(false)}
+        />
+      )}
+
       {/* Détail dépliable */}
-      {expanded && (
+      {expanded && !editing && (
         <div className={`mx-3 mb-3 mt-1 rounded-xl border px-4 py-3 text-xs font-mono ${bgCol}`}>
           <div className="grid grid-cols-3 gap-4">
             <div>
@@ -312,10 +339,11 @@ interface Props {
   positions:   PortfolioPosition[]
   onRemove:    (id: string) => void
   onAdd:       (pos: Omit<PortfolioPosition, 'id'>) => void
+  onUpdate:    (id: string, patch: Partial<PortfolioPosition>) => void
   user:        any
 }
 
-export function StockPortfolioPanel({ symbol, positions, onRemove, onAdd, user }: Props) {
+export function StockPortfolioPanel({ symbol, positions, onRemove, onAdd, onUpdate, user }: Props) {
   const [showAddForm, setShowAddForm] = useState(false)
 
   const { data: quote } = useQuery({
@@ -446,6 +474,7 @@ export function StockPortfolioPanel({ symbol, positions, onRemove, onAdd, user }
               pos={lot}
               livePrice={livePrice ?? lot.buy_price}
               onRemove={onRemove}
+              onUpdate={onUpdate}
             />
           ))}
         </>

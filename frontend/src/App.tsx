@@ -122,7 +122,7 @@ export default function App() {
   const queryClient = useQueryClient()
   const { user }                                         = useAuth()
   const { items: watchlistItems, addItem, removeItem }   = useWatchlist(user)
-  const { positions, addPosition, removePosition }       = usePortfolio(user)
+  const { positions, addPosition, removePosition, updatePosition } = usePortfolio(user)
   const { isMobile, mode, setLayout }                    = useLayout()
 
   const { data: quote } = useQuery({
@@ -406,6 +406,7 @@ export default function App() {
               <Portfolio
                 positions={positions}
                 onRemove={removePosition}
+                onUpdate={updatePosition}
                 onSelect={handleSelectSymbol}
                 onOpenSearch={() => setSearchOpen(true)}
                 user={user}
@@ -517,6 +518,7 @@ export default function App() {
                   positions={positions}
                   onRemove={removePosition}
                   onAdd={addPosition}
+                  onUpdate={updatePosition}
                   user={user}
                 />
               )}

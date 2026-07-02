@@ -2,10 +2,11 @@ import { useState, useEffect, useRef } from 'react'
 import { useQuery } from '@tanstack/react-query'
 import {
   Trash2, TrendingUp, TrendingDown, PieChart, Plus,
-  ChevronDown, ChevronUp, Undo2, ChevronRight, Receipt,
+  ChevronDown, ChevronUp, Undo2, ChevronRight, Receipt, Pencil,
 } from 'lucide-react'
 import { getQuote } from '../services/api'
 import { isPeaEligible } from '../utils/lcl-fees'
+import { PositionEditForm } from './PositionEditForm'
 import type { PortfolioPosition } from '../types'
 
 // ── Helpers ────────────────────────────────────────────────────────────────────
@@ -58,11 +59,15 @@ function UndoToast({ symbol, onUndo, onDone }: {
 
 // ── Ligne position ─────────────────────────────────────────────────────────────
 function PositionRow({
-  pos, onRemove, onSelect,
+  pos, onRemove, onUpdate, onSelect,
 }: {
-  pos: PortfolioPosition; onRemove: (id: string) => void; onSelect: (symbol: string) => void
+  pos: PortfolioPosition
+  onRemove: (id: string) => void
+  onUpdate: (id: string, patch: Partial<PortfolioPosition>) => void
+  onSelect: (symbol: string) => void
 }) {
   const [expanded, setExpanded] = useState(false)
+  const [editing, setEditing] = useState(false)
 
   const { data: quote } = useQuery({
     queryKey:        ['quote', pos.symbol],
@@ -175,6 +180,17 @@ function PositionRow({
           />
         </button>
 
+        {/* Bouton éditer */}
+        <button
+          onClick={e => { e.stopPropagation(); setEditing(true) }}
+          className="shrink-0 flex items-center justify-center w-9 self-stretch
+            text-slate-700 hover:text-white hover:bg-accent-blue/80
+            border-l border-dark-700/50 transition-all duration-150"
+          title={`Éditer ${pos.symbol}`}
+        >
+          <Pencil size={14} />
+        </button>
+
         {/* Bouton supprimer */}
         <button
           onClick={e => { e.stopPropagation(); onRemove(pos.id) }}
@@ -187,8 +203,21 @@ function PositionRow({
         </button>
       </div>
 
+      {/* ── Formulaire édition ────────────────────────────────────────────── */}
+      {editing && (
+        <PositionEditForm
+          pos={pos}
+          livePrice={currentPrice}
+          onSave={patch => {
+            onUpdate(pos.id, patch)
+            setEditing(false)
+          }}
+          onCancel={() => setEditing(false)}
+        />
+      )}
+
       {/* ── Détail dépliable ──────────────────────────────────────────────── */}
-      {expanded && (
+      {expanded && !editing && (
         <div className={`mx-3 mb-3 mt-1 rounded-xl border px-4 py-3 ${greenBg}`}>
           <div className="grid grid-cols-3 gap-4 text-xs font-mono">
 
@@ -251,12 +280,13 @@ function Row({ label, value, subValue, className = 'text-slate-400' }: {
 interface Props {
   positions:    PortfolioPosition[]
   onRemove:     (id: string) => void
+  onUpdate:     (id: string, patch: Partial<PortfolioPosition>) => void
   onSelect:     (symbol: string) => void
   onOpenSearch: () => void
   user:         any
 }
 
-export function Portfolio({ positions, onRemove, onSelect, onOpenSearch, user }: Props) {
+export function Portfolio({ positions, onRemove, onUpdate, onSelect, onOpenSearch, user }: Props) {
   const [collapsed, setCollapsed] = useState(false)
   const [pending,   setPending]   = useState<{ id: string; symbol: string } | null>(null)
 
@@ -380,7 +410,7 @@ export function Portfolio({ positions, onRemove, onSelect, onOpenSearch, user }:
           ) : (
             <div>
               {visiblePositions.map(pos => (
-                <PositionRow key={pos.id} pos={pos} onRemove={handleRemove} onSelect={onSelect} />
+                <PositionRow key={pos.id} pos={pos} onRemove={handleRemove} onUpdate={onUpdate} onSelect={onSelect} />
               ))}
             </div>
           )}
