@@ -61,7 +61,7 @@ def _call_groq(api_key: str, prompt: str) -> str:
 
 # ── Gemini ───────────────────────────────────────────────────────────────────
 GEMINI_BASE   = "https://generativelanguage.googleapis.com/v1beta/models"
-GEMINI_MODELS = ["gemini-2.0-flash-lite", "gemini-1.5-flash", "gemini-2.0-flash"]
+GEMINI_MODELS = ["gemini-2.5-flash-lite", "gemini-2.5-flash", "gemini-flash-lite-latest"]
 
 def _call_gemini(api_key: str, model: str, prompt: str) -> str:
     url     = f"{GEMINI_BASE}/{model}:generateContent"

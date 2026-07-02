@@ -216,7 +216,7 @@ def call_gemini(prompt):
     key = os.environ.get("GEMINI_API_KEY","")
     if not key: return None
     try:
-        url = f"https://generativelanguage.googleapis.com/v1beta/models/gemini-1.5-flash:generateContent?key={key}"
+        url = f"https://generativelanguage.googleapis.com/v1beta/models/gemini-2.5-flash-lite:generateContent?key={key}"
         r = httpx.post(url, json={"contents":[{"parts":[{"text":prompt}]}]}, timeout=30)
         data = r.json()
         return data.get("candidates",[{}])[0].get("content",{}).get("parts",[{}])[0].get("text","")
