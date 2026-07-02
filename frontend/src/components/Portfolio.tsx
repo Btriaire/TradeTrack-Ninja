@@ -97,10 +97,10 @@ function PositionRow({
     <div className="border-b border-dark-700/50 last:border-b-0">
 
       {/* ── Ligne principale ──────────────────────────────────────────────── */}
-      <div className="flex items-stretch gap-0 hover:bg-dark-700/25 transition-colors">
+      <div className={`flex items-stretch gap-0 transition-colors ${up ? 'hover:bg-emerald-500/5' : 'hover:bg-red-500/5'}`}>
 
         {/* Bande couleur gauche */}
-        <div className={`w-0.5 shrink-0 self-stretch ${up ? 'bg-emerald-500/40' : 'bg-red-500/40'}`} />
+        <div className={`w-1 shrink-0 self-stretch ${up ? 'bg-emerald-500/60' : 'bg-red-500/60'}`} />
 
         {/* Info valeur — cliquable → analyse */}
         <div
@@ -118,8 +118,8 @@ function PositionRow({
 
           {/* Ligne 2 : détails position */}
           <div className="flex items-center gap-2 mt-1.5 text-[11px] font-mono flex-wrap">
-            <span className="text-slate-500">
-              {pos.quantity} act. × <span className="text-slate-400">{pos.buy_price.toFixed(2)} €</span>
+            <span className={`${up ? 'text-emerald-400' : 'text-red-400'} font-semibold`}>
+              {pos.quantity} act. × <span className="text-white">{pos.buy_price.toFixed(2)} €</span>
             </span>
             {hasQuote && (
               <>
@@ -180,27 +180,28 @@ function PositionRow({
           />
         </button>
 
-        {/* Bouton éditer */}
-        <button
-          onClick={e => { e.stopPropagation(); setEditing(true) }}
-          className="shrink-0 flex items-center justify-center w-9 self-stretch
-            text-slate-700 hover:text-white hover:bg-accent-blue/80
-            border-l border-dark-700/50 transition-all duration-150"
-          title={`Éditer ${pos.symbol}`}
-        >
-          <Pencil size={14} />
-        </button>
+        {/* Boutons d'action */}
+        <div className="flex items-stretch border-l border-dark-700/50">
+          <button
+            onClick={e => { e.stopPropagation(); setEditing(true) }}
+            className="shrink-0 flex items-center justify-center px-3 self-stretch
+              text-slate-600 hover:text-accent-blue hover:bg-accent-blue/20
+              border-r border-dark-700/30 transition-all duration-150 group"
+            title={`Éditer ${pos.symbol}`}
+          >
+            <Pencil size={15} className="group-hover:scale-110 transition-transform" />
+          </button>
 
-        {/* Bouton supprimer */}
-        <button
-          onClick={e => { e.stopPropagation(); onRemove(pos.id) }}
-          className="shrink-0 flex items-center justify-center w-9 self-stretch
-            text-slate-700 hover:text-white hover:bg-red-500/80
-            border-l border-dark-700/50 transition-all duration-150"
-          title={`Supprimer ${pos.symbol}`}
-        >
-          <Trash2 size={14} />
-        </button>
+          <button
+            onClick={e => { e.stopPropagation(); onRemove(pos.id) }}
+            className="shrink-0 flex items-center justify-center px-3 self-stretch
+              text-slate-600 hover:text-red-400 hover:bg-red-500/20
+              transition-all duration-150 group"
+            title={`Supprimer ${pos.symbol}`}
+          >
+            <Trash2 size={15} className="group-hover:scale-110 transition-transform" />
+          </button>
+        </div>
       </div>
 
       {/* ── Formulaire édition ────────────────────────────────────────────── */}

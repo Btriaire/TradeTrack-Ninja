@@ -47,14 +47,14 @@ function LotRow({
 
   return (
     <div className="border-b border-dark-700/40 last:border-b-0">
-      <div className="flex items-stretch hover:bg-dark-700/20 transition-colors">
+      <div className={`flex items-stretch transition-colors ${up ? 'hover:bg-emerald-500/5' : 'hover:bg-red-500/5'}`}>
         {/* Bande couleur */}
-        <div className={`w-0.5 shrink-0 self-stretch ${up ? 'bg-emerald-500/50' : 'bg-red-500/50'}`} />
+        <div className={`w-1 shrink-0 self-stretch ${up ? 'bg-emerald-500/60' : 'bg-red-500/60'}`} />
 
         {/* Infos lot */}
         <div className="flex-1 px-4 py-3 min-w-0">
           <div className="flex items-baseline gap-2 text-xs font-mono">
-            <span className="text-slate-400 font-semibold">
+            <span className={`${up ? 'text-emerald-400' : 'text-red-400'} font-semibold`}>
               {pos.quantity} act. × <span className="text-white">{pos.buy_price.toFixed(2)} €</span>
             </span>
             <span className="text-slate-600">·</span>
@@ -90,27 +90,28 @@ function LotRow({
           <ChevronRight size={9} className={`mt-1 opacity-30 transition-transform ${expanded ? 'rotate-90' : ''} ${col}`} />
         </button>
 
-        {/* Éditer */}
-        <button
-          onClick={() => setEditing(true)}
-          className="shrink-0 w-9 flex items-center justify-center self-stretch
-            text-slate-700 hover:text-white hover:bg-accent-blue/80
-            border-l border-dark-700/40 transition-all"
-          title="Éditer cette ligne"
-        >
-          <Pencil size={13} />
-        </button>
+        {/* Boutons d'action */}
+        <div className="flex items-stretch border-l border-dark-700/40">
+          <button
+            onClick={() => setEditing(true)}
+            className="shrink-0 flex items-center justify-center px-3 self-stretch
+              text-slate-600 hover:text-accent-blue hover:bg-accent-blue/20
+              border-r border-dark-700/30 transition-all duration-150 group"
+            title="Éditer cette ligne"
+          >
+            <Pencil size={14} className="group-hover:scale-110 transition-transform" />
+          </button>
 
-        {/* Supprimer */}
-        <button
-          onClick={() => onRemove(pos.id)}
-          className="shrink-0 w-9 flex items-center justify-center self-stretch
-            text-slate-700 hover:text-white hover:bg-red-500/80
-            border-l border-dark-700/40 transition-all"
-          title="Retirer cette ligne"
-        >
-          <Trash2 size={13} />
-        </button>
+          <button
+            onClick={() => onRemove(pos.id)}
+            className="shrink-0 flex items-center justify-center px-3 self-stretch
+              text-slate-600 hover:text-red-400 hover:bg-red-500/20
+              transition-all duration-150 group"
+            title="Retirer cette ligne"
+          >
+            <Trash2 size={14} className="group-hover:scale-110 transition-transform" />
+          </button>
+        </div>
       </div>
 
       {/* Formulaire édition */}
