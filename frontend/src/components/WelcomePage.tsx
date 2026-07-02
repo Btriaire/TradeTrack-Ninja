@@ -412,6 +412,23 @@ function PortfolioSection({ positions, onNavigate, onOpenSearch }: {
 
         <PortfolioRing pnl={totalPnl} pct={totalPct} cost={totalCost} value={totalCurrent} />
 
+        {/* Stat badges */}
+        <div className="mt-3 flex gap-2 flex-wrap justify-center">
+          <div className="text-[11px] font-mono bg-dark-700/40 px-2.5 py-1 rounded-lg border border-dark-600 text-slate-400">
+            <span className="text-white font-semibold">{positions.length}</span> position{positions.length > 1 ? 's' : ''}
+          </div>
+          <div className={`text-[11px] font-mono px-2.5 py-1 rounded-lg border ${
+            up ? 'bg-emerald-500/10 border-emerald-500/30 text-emerald-400' : 'bg-red-500/10 border-red-500/30 text-red-400'
+          }`}>
+            {up ? '↑' : '↓'} <span className="font-semibold">{Math.abs(totalPct).toFixed(2)}%</span>
+          </div>
+          {sorted.length > 0 && (
+            <div className="text-[11px] font-mono bg-dark-700/40 px-2.5 py-1 rounded-lg border border-dark-600 text-slate-400">
+              Top: <span className="text-accent-blue font-semibold">{sorted[0].symbol}</span>
+            </div>
+          )}
+        </div>
+
         {/* Liste positions */}
         <div className="mt-4 space-y-0">
           {sorted.map(p => <LiveRow key={p.id} pos={p} />)}

@@ -41,6 +41,48 @@ import { usePortfolio }   from './hooks/usePortfolio'
 import { useLayout }      from './hooks/useLayout'
 import { getHistory, getIndicators, getQuote, getNews, getIndices, getGeoEvents, getTopSectors, getGameOfDay, pingBackend } from './services/api'
 import { Logo } from './components/Logo'
+import type { PortfolioPosition } from './types'
+
+// ── Portfolio header badge — résumé portfolio en haut de l'appli ────────────────
+function PortfolioHeaderBadge({ positions }: { positions: PortfolioPosition[] }) {
+  const { data: batchData = {} } = useQuery({
+    queryKey: ['header-portfolio-batch', positions.map(p => p.symbol).join(',')],
+    queryFn: async () => {
+      const syms = [...new Set(positions.map(p => p.symbol))]
+      if (syms.length === 0) return {}
+      const result = await import('./services/api').then(m => m.getBatchQuotes(syms))
+      return Object.fromEntries(
+        Object.entries(result as Record<string, any>).map(([sym, data]) => [sym, data?.price ?? 0])
+      ) as Record<string, number>
+    },
+    enabled: positions.length > 0,
+    refetchInterval: 60_000,
+    staleTime: 30_000,
+  })
+
+  const quotes = batchData
+  const totalCost = positions.reduce((s, p) => s + p.buy_price * p.quantity + (p.fees ?? 0), 0)
+  const totalCurrent = positions.reduce((s, p) => s + (quotes[p.symbol] ?? p.buy_price) * p.quantity, 0)
+  const totalPnl = totalCurrent - totalCost
+  const totalPct = totalCost > 0 ? (totalPnl / totalCost) * 100 : 0
+  const up = totalPnl >= 0
+
+  return (
+    <button
+      onClick={() => {} /* navigate to portfolio */}
+      className={`flex items-center gap-1.5 text-xs font-mono px-2.5 py-1.5 rounded-lg border transition-colors ${
+        up
+          ? 'bg-emerald-500/10 border-emerald-500/25 text-emerald-400 hover:bg-emerald-500/20'
+          : 'bg-red-500/10 border-red-500/25 text-red-400 hover:bg-red-500/20'
+      }`}
+      title="Voir le portfolio"
+    >
+      <PieChart size={12} />
+      <span className="font-bold">{totalPnl >= 0 ? '+' : '−'}{Math.abs(totalPnl).toLocaleString('fr-FR', { maximumFractionDigits: 0 })} €</span>
+      <span className="opacity-70">{totalPct >= 0 ? '+' : ''}{totalPct.toFixed(2)}%</span>
+    </button>
+  )
+}
 
 // ── Fallback Suspense — défini HORS du composant pour éviter le remount à chaque render
 function LazyFallback() {
@@ -225,6 +267,10 @@ export default function App() {
             {!isMobile && <span>Rechercher</span>}
             {!isMobile && <span className="text-slate-700 text-xs">⌘K</span>}
           </button>
+          {/* Portfolio summary badge */}
+          {!isMobile && positions.length > 0 && (
+            <PortfolioHeaderBadge positions={positions} />
+          )}
           {!isMobile && (
             <div className="flex items-center gap-1.5 text-xs text-slate-500">
               <span className="h-2 w-2 rounded-full bg-green-500 animate-pulse" />
