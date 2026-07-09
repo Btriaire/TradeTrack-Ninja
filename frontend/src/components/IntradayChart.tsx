@@ -142,7 +142,7 @@ export function IntradayChart({ symbol }: { symbol: string }) {
     )
 
     // ── Ligne VWAP ──────────────────────────────────────────────────────
-    if (data.session.vwap) {
+    if (data.session?.vwap) {
       const vwapSeries = chart.addLineSeries({
         color:            '#f59e0b',
         lineWidth:        1,

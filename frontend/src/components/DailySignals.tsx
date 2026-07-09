@@ -2,9 +2,10 @@ import { useState } from 'react'
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query'
 import {
   TrendingUp, TrendingDown, RefreshCw, Plus, Zap,
-  Clock, Target, BarChart2, BookmarkPlus, Filter,
+  Clock, Target, BarChart2, BookmarkPlus, Filter, Bot,
 } from 'lucide-react'
 import { getSignals, refreshSignals } from '../services/api'
+import { askJarvis } from '../services/jarvis'
 import type { WatchlistItem, PortfolioPosition } from '../types'
 
 // ── Types filtres ─────────────────────────────────────────────────────────────
@@ -66,6 +67,14 @@ function SignalCardUI({
   const colorBadge= isBuy ? 'text-green-400' : 'text-red-400'
   const potColor  = s.potential_pct >= 0 ? 'text-green-400' : 'text-red-400'
 
+  const jarvis = useMutation({
+    mutationFn: () => askJarvis(
+      `En une phrase courte et simple en français (max 30 mots), donne ton avis sur ${s.name} (${s.symbol}). ` +
+      `RSI=${s.rsi}, signal technique=${s.signal}. Contexte: ${s.reason}. ` +
+      `Réponds uniquement par la phrase, sans introduction ni guillemets.`
+    ),
+  })
+
   return (
     <div className={`rounded-xl border p-3.5 flex flex-col gap-2 hover:brightness-110 transition-all cursor-pointer ${colorMain}`}
       onClick={() => onSelectSymbol(s.symbol)}>
@@ -101,6 +110,31 @@ function SignalCardUI({
       {s.reason && (
         <p className="text-xs text-slate-300 leading-relaxed italic">"{s.reason}"</p>
       )}
+
+      {/* Avis Jarvis (IA locale, à la demande) */}
+      <div onClick={e => e.stopPropagation()}>
+        {!jarvis.data && !jarvis.isPending && (
+          <button
+            onClick={() => jarvis.mutate()}
+            className="flex items-center gap-1.5 text-[10px] text-slate-500 hover:text-cyan-400 bg-dark-700/60 hover:bg-dark-700 px-2 py-1 rounded-lg transition-colors"
+          >
+            <Bot size={10} /> Avis Jarvis (IA locale)
+          </button>
+        )}
+        {jarvis.isPending && (
+          <div className="flex items-center gap-1.5 text-[10px] text-slate-500 bg-dark-700/60 px-2 py-1 rounded-lg">
+            <RefreshCw size={10} className="animate-spin" /> Jarvis réfléchit… (jusqu'à 30s)
+          </div>
+        )}
+        {jarvis.data && (
+          <div className="text-[10px] bg-cyan-500/10 border border-cyan-500/20 rounded-lg px-2 py-1.5 flex items-start gap-1.5">
+            <Bot size={10} className="text-cyan-400 shrink-0 mt-0.5" />
+            <span className={jarvis.data.available ? 'text-cyan-300' : 'text-slate-600'}>
+              {jarvis.data.available ? jarvis.data.answer : 'Jarvis indisponible pour le moment.'}
+            </span>
+          </div>
+        )}
+      </div>
 
       {/* Métriques */}
       <div className="grid grid-cols-3 gap-1 text-xs">

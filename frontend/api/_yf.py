@@ -126,3 +126,69 @@ def yf_batch(symbols):
             try: result[s]=f.result()
             except: result[s]={"symbol":s,"price":None}
     return result
+
+# ── Objectifs de cours analystes (quoteSummary — nécessite un "crumb") ────────
+_YF_CRUMB_CACHE = {"cookie": None, "crumb": None, "ts": 0}
+_YF_CRUMB_TTL = 50 * 60  # 50 min
+
+def _get_yf_crumb():
+    import time as _time
+    now = _time.time()
+    if _YF_CRUMB_CACHE["crumb"] and now - _YF_CRUMB_CACHE["ts"] < _YF_CRUMB_TTL:
+        return _YF_CRUMB_CACHE["cookie"], _YF_CRUMB_CACHE["crumb"]
+    client = httpx.Client(headers=YF_HEADERS, timeout=8, follow_redirects=True)
+    try:
+        client.get("https://fc.yahoo.com")
+        r = client.get("https://query1.finance.yahoo.com/v1/test/getcrumb")
+        crumb = r.text.strip()
+        if not crumb or "{" in crumb:
+            return None, None
+        cookie = "; ".join(f"{k}={v}" for k, v in client.cookies.items())
+        _YF_CRUMB_CACHE.update({"cookie": cookie, "crumb": crumb, "ts": now})
+        return cookie, crumb
+    except Exception:
+        return None, None
+    finally:
+        client.close()
+
+def yf_targets(symbol):
+    cookie, crumb = _get_yf_crumb()
+    if not crumb:
+        return {"symbol": symbol, "error": "not available"}
+    try:
+        headers = dict(YF_HEADERS)
+        if cookie: headers["Cookie"] = cookie
+        url = f"https://query1.finance.yahoo.com/v10/finance/quoteSummary/{symbol}"
+        r = httpx.get(url, params={"modules": "financialData,recommendationTrend", "crumb": crumb},
+                      headers=headers, timeout=10)
+        res = r.json().get("quoteSummary", {}).get("result")
+        if not res:
+            return {"symbol": symbol, "error": "not available"}
+        fd = res[0].get("financialData", {}) or {}
+        trend = (res[0].get("recommendationTrend", {}) or {}).get("trend", [])
+        t0 = trend[0] if trend else {}
+        def raw(d, k):
+            v = d.get(k)
+            return v.get("raw") if isinstance(v, dict) else v
+        current = clean(raw(fd, "currentPrice"))
+        mean = clean(raw(fd, "targetMeanPrice"))
+        upside = round((mean - current) / current * 100, 1) if mean and current else None
+        return {
+            "symbol": symbol,
+            "current_price": current,
+            "target_mean": mean,
+            "target_median": clean(raw(fd, "targetMedianPrice")),
+            "target_high": clean(raw(fd, "targetHighPrice")),
+            "target_low": clean(raw(fd, "targetLowPrice")),
+            "upside_mean": upside,
+            "recommendation_key": fd.get("recommendationKey", "hold"),
+            "recommendation_score": clean(raw(fd, "recommendationMean")),
+            "nb_analysts": raw(fd, "numberOfAnalystOpinions") or 0,
+            "distribution": {
+                "strongBuy": t0.get("strongBuy", 0), "buy": t0.get("buy", 0),
+                "hold": t0.get("hold", 0), "sell": t0.get("sell", 0),
+                "strongSell": t0.get("strongSell", 0),
+            },
+        }
+    except Exception:
+        return {"symbol": symbol, "error": "not available"}

@@ -12,7 +12,7 @@ import httpx
 
 sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
 from _yf import (cors, qs_params, yf_quote, yf_history, yf_indicators,
-                 yf_batch, yf_chart, YF_HEADERS, clean)
+                 yf_batch, yf_chart, yf_targets, YF_HEADERS, clean)
 
 # ── Données stocks ────────────────────────────────────────────────────────────
 INDICES = {"CAC 40":"^FCHI","DAX":"^GDAXI","S&P 500":"^GSPC","NASDAQ":"^IXIC",
@@ -223,6 +223,10 @@ def call_gemini(prompt):
     except Exception:
         return None
 
+# ── Avis IA locale (Jarvis) ────────────────────────────────────────────────────
+# Appelé directement par le frontend (voir src/services/jarvis.ts) : un run
+# Qwen2.5:3B répond en ~15-30s, largement au-delà des 10s d'une fonction Vercel.
+
 # ── Routing ───────────────────────────────────────────────────────────────────
 def _parts(path):
     p = [x for x in urlparse(path).path.split("/") if x]
@@ -337,20 +341,54 @@ class handler(BaseHTTPRequestHandler):
         if s0 == "live" and len(segs) >= 2:
             return self._send(yf_quote(segs[1]))
         if s0 == "intraday" and len(segs) >= 2:
-            data = yf_chart(segs[1], "2m", "1d", True)
+            interval = params.get("interval","5m")
+            yf_interval = "1m" if interval == "1m" else "2m"
+            data = yf_chart(segs[1], yf_interval, "1d", True)
             res = data.get("chart",{}).get("result")
-            out = {"symbol":segs[1],"candles":[],"vwap":None,"high":None,"low":None,"volume":None}
+            out = {"symbol":segs[1],"interval":interval,"candles":[],
+                   "market_state":"CLOSED","session":{
+                       "open":None,"high":None,"low":None,"vwap":None,
+                       "volume":0,"current":None,"delta_open":None}}
             if res:
                 r0 = res[0]; ts = r0.get("timestamp",[])
                 q0 = r0.get("indicators",{}).get("quote",[{}])[0]
                 cs = q0.get("close",[]); os_ = q0.get("open",[]); vs = q0.get("volume",[])
+                hs = q0.get("high",[]); ls_ = q0.get("low",[])
                 for i, t in enumerate(ts):
                     c = clean(cs[i] if i < len(cs) else None)
                     o = clean(os_[i] if i < len(os_) else None)
+                    h = clean(hs[i] if i < len(hs) else None)
+                    l = clean(ls_[i] if i < len(ls_) else None)
                     if c is None or o is None: continue
-                    out["candles"].append({"time":t,"open":o,"close":c,"volume":vs[i] if i < len(vs) else 0})
+                    out["candles"].append({"time":t,"open":o,"high":h or c,"low":l or c,
+                                            "close":c,"volume":vs[i] if i < len(vs) else 0})
+
+                candles = out["candles"]
+                if candles:
+                    session_open  = candles[0]["open"]
+                    session_high  = max(c["high"] for c in candles)
+                    session_low   = min(c["low"] for c in candles)
+                    session_vol   = sum(c["volume"] for c in candles)
+                    typ_vol_sum   = sum(((c["high"]+c["low"]+c["close"])/3) * c["volume"] for c in candles)
+                    vwap          = round(typ_vol_sum / session_vol, 4) if session_vol > 0 else None
+                    current       = candles[-1]["close"]
+                    delta_open    = round((current - session_open) / session_open * 100, 2) if session_open else None
+                    out["session"] = {"open":session_open,"high":session_high,"low":session_low,
+                        "vwap":vwap,"volume":session_vol,"current":current,"delta_open":delta_open}
+
+                meta = r0.get("meta",{})
+                ctp = meta.get("currentTradingPeriod",{})
+                now = int(time.time())
+                for state, key in (("PRE","pre"),("REGULAR","regular"),("POST","post")):
+                    p = ctp.get(key)
+                    if p and p.get("start") is not None and p.get("end") is not None \
+                            and p["start"] <= now <= p["end"]:
+                        out["market_state"] = state
+                        break
             return self._send(out)
-        if s0 in ("profile","targets") and len(segs) >= 2:
+        if s0 == "targets" and len(segs) >= 2:
+            return self._send(yf_targets(segs[1]))
+        if s0 == "profile" and len(segs) >= 2:
             return self._send({"symbol":segs[1],"error":"not available"})
         self._send({"error":"not found"}, 404)
 
