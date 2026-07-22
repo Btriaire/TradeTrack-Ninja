@@ -19,10 +19,46 @@ INDICES = {"CAC 40":"^FCHI","DAX":"^GDAXI","S&P 500":"^GSPC","NASDAQ":"^IXIC",
     "Euro Stoxx 50":"^STOXX50E","FTSE 100":"^FTSE","Nikkei 225":"^N225","AEX":"^AEX"}
 
 UNIVERSE_SYMBOLS = ["MC.PA","TTE.PA","AIR.PA","BNP.PA","SAN.PA","OR.PA","CS.PA","DG.PA",
-    "DSY.PA","CAP.PA","KER.PA","RMS.PA","STM.PA","VIE.PA","BN.PA",
+    "DSY.PA","CAP.PA","KER.PA","RMS.PA","STMPA.PA","VIE.PA","BN.PA",
     "AAPL","MSFT","NVDA","GOOGL","AMZN","META","TSLA",
-    "SAP.DE","SIE.DE","ALV.DE","DAI.DE","BAYN.DE",
+    "SAP.DE","SIE.DE","ALV.DE","MBG.DE","BAYN.DE",
     "ASML.AS","SHELL.AS","ABN.AS","PHIA.AS"]
+
+# ── Univers "Market Scan" (Places de Marché → secteurs + pépites) ────────────
+# (name, index, country_flag, sector) — sector doit matcher SECTORS du frontend
+SECTOR_UNIVERSE = {
+    "MC.PA":  ("LVMH","CAC 40","🇫🇷","Luxe & Mode"),
+    "TTE.PA": ("TotalEnergies","CAC 40","🇫🇷","Énergie"),
+    "AIR.PA": ("Airbus","CAC 40","🇫🇷","Aérospatiale"),
+    "BNP.PA": ("BNP Paribas","CAC 40","🇫🇷","Finance"),
+    "SAN.PA": ("Sanofi","CAC 40","🇫🇷","Santé"),
+    "OR.PA":  ("L'Oréal","CAC 40","🇫🇷","Consommation"),
+    "CS.PA":  ("AXA","CAC 40","🇫🇷","Finance"),
+    "DG.PA":  ("Vinci","CAC 40","🇫🇷","Industrie"),
+    "DSY.PA": ("Dassault Systèmes","CAC 40","🇫🇷","Technologie"),
+    "CAP.PA": ("Capgemini","CAC 40","🇫🇷","Technologie"),
+    "KER.PA": ("Kering","CAC 40","🇫🇷","Luxe & Mode"),
+    "RMS.PA": ("Hermès","CAC 40","🇫🇷","Luxe & Mode"),
+    "STMPA.PA": ("STMicroelectronics","CAC 40","🇫🇷","Technologie"),
+    "VIE.PA": ("Veolia","CAC 40","🇫🇷","Industrie"),
+    "BN.PA":  ("Danone","CAC 40","🇫🇷","Consommation"),
+    "AAPL":   ("Apple","NASDAQ","🇺🇸","Technologie"),
+    "MSFT":   ("Microsoft","NASDAQ","🇺🇸","Technologie"),
+    "NVDA":   ("Nvidia","NASDAQ","🇺🇸","Technologie"),
+    "GOOGL":  ("Alphabet","NASDAQ","🇺🇸","Technologie"),
+    "AMZN":   ("Amazon","NASDAQ","🇺🇸","Consommation"),
+    "META":   ("Meta","NASDAQ","🇺🇸","Technologie"),
+    "TSLA":   ("Tesla","NASDAQ","🇺🇸","Automobile"),
+    "SAP.DE": ("SAP","DAX","🇩🇪","Technologie"),
+    "SIE.DE": ("Siemens","DAX","🇩🇪","Industrie"),
+    "ALV.DE": ("Allianz","DAX","🇩🇪","Finance"),
+    "MBG.DE": ("Mercedes-Benz","DAX","🇩🇪","Automobile"),
+    "BAYN.DE":("Bayer","DAX","🇩🇪","Santé"),
+    "ASML.AS":("ASML","AEX","🇳🇱","Technologie"),
+    "SHELL.AS":("Shell","AEX","🇳🇱","Énergie"),
+    "ABN.AS": ("ABN AMRO","AEX","🇳🇱","Finance"),
+    "PHIA.AS":("Philips","AEX","🇳🇱","Santé"),
+}
 
 # ── Données news ──────────────────────────────────────────────────────────────
 SOURCES_PRIMARY = {
@@ -198,6 +234,63 @@ def compute_daily_signals():
     return {"great_catch": great, "stay_away": away,
             "universe_size": len(syms), "generating": False,
             "generated_at": datetime.now().isoformat()}
+
+def _sector_stock(sym):
+    """Calcule une ligne du Market Scan (score technique + classification pépite)."""
+    name, index, country, sector = SECTOR_UNIVERSE.get(sym, (sym, "", "🌍", "Autre"))
+    q = yf_quote(sym)
+    price = q.get("price")
+    if not price:
+        return None
+    change_pct = q.get("change_pct") or 0
+    volume = q.get("volume") or 0
+    sparkline = q.get("sparkline") or []
+    base = {"symbol":sym, "name":name, "index":index, "country":country, "sector":sector,
+            "price":price, "change_pct":change_pct, "volume":volume, "sparkline":sparkline}
+
+    ind = yf_indicators(sym)
+    if not ind:
+        return {**base, "score":0, "gem":None}
+
+    rsi = ind.get("rsi", 50) or 50
+    macd = ind.get("macd", 0) or 0
+    msig = ind.get("macd_signal", 0) or 0
+    sma20 = ind.get("sma20"); sma50 = ind.get("sma50")
+
+    score = 0
+    if rsi < 35: score += 1
+    elif rsi > 65: score -= 1
+    if macd > msig: score += 1
+    else: score -= 1
+    if sma20 and sma50:
+        score += 1 if sma20 > sma50 else -1
+
+    gem = None
+    if score >= 2 and rsi < 70:
+        gem = "buy"
+    elif score <= -2:
+        gem = "sell"
+    elif change_pct >= 3 and score >= 0:
+        gem = "momentum+"
+    elif change_pct <= -2 and rsi < 40:
+        gem = "dip"
+
+    return {**base, "score":score, "gem":gem}
+
+def compute_sector_scan():
+    from concurrent.futures import ThreadPoolExecutor, as_completed
+    out = []
+    syms = list(SECTOR_UNIVERSE.keys())
+    with ThreadPoolExecutor(max_workers=len(syms)) as pool:
+        futs = [pool.submit(_sector_stock, s) for s in syms]
+        for f in as_completed(futs):
+            try:
+                r = f.result()
+                if r: out.append(r)
+            except Exception:
+                pass
+    return out
+
 SECTOR_ETFS = {"Technologie":"XLK","Énergie":"XLE","Finance":"XLF","Santé":"XLV",
     "Consommation":"XLY","Industrie":"XLI","Luxe & Mode":"MC.PA","Chimie":"AI.PA","Infrastructures":"DG.PA"}
 GEO_EVENTS = [
@@ -329,7 +422,7 @@ class handler(BaseHTTPRequestHandler):
                    for sym in UNIVERSE_SYMBOLS]
             return self._send(out)
         if s0 == "sectors":
-            return self._send([])
+            return self._send(compute_sector_scan())
         if s0 == "quote" and len(segs) >= 2:
             q = yf_quote(segs[1])
             return self._send(q, 200 if q.get("price") else 404)
