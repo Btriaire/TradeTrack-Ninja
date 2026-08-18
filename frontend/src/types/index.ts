@@ -93,3 +93,19 @@ export interface PortfolioPosition {
   fees?: number      // frais de courtage (€) — optionnel, défaut 0
   notes?: string
 }
+
+// ── Simulateur (Labo Trading) — 100% isolé du vrai portfolio ──────────────────
+export interface VirtualPosition {
+  id: string
+  symbol: string
+  name: string
+  quantity: number
+  buy_price: number
+  buy_date: string
+  fees?: number
+}
+
+export interface SimulatorCapital {
+  balance: number
+  starting_capital: number
+}

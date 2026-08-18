@@ -4,6 +4,7 @@ import {
   BarChart2, Newspaper, Calculator, Sparkles,
   Activity, Menu, X, Monitor, Smartphone, RotateCcw,
   Search, PieChart, Zap, Globe, TrendingUp, Rss, Stethoscope, Telescope, Building2, Crosshair,
+  FlaskConical,
 } from 'lucide-react'
 
 // ── Imports directs — composants utilisés immédiatement au chargement ──────────
@@ -35,6 +36,7 @@ const GeoEvents       = lazy(() => import('./components/GeoEvents').then(m => ({
 const DailySignals    = lazy(() => import('./components/DailySignals').then(m => ({ default: m.DailySignals })))
 const Markets         = lazy(() => import('./components/Markets').then(m => ({ default: m.Markets })))
 const FinancialNews   = lazy(() => import('./components/FinancialNews').then(m => ({ default: m.FinancialNews })))
+const Simulator       = lazy(() => import('./components/Simulator').then(m => ({ default: m.Simulator })))
 import { useAuth }        from './hooks/useAuth'
 import { useWatchlist }   from './hooks/useWatchlist'
 import { usePortfolio }   from './hooks/usePortfolio'
@@ -96,7 +98,7 @@ function LazyFallback() {
 }
 
 // ── Vues globales (pas liées à une valeur) ────────────────────────────────────
-type GlobalView = 'welcome' | 'dashboard' | 'stock' | 'markets' | 'signals' | 'news' | 'portfolio'
+type GlobalView = 'welcome' | 'dashboard' | 'stock' | 'markets' | 'signals' | 'news' | 'portfolio' | 'simulator'
 
 const GLOBAL_VIEWS: { id: GlobalView; label: string; short: string; icon: any; desc: string }[] = [
   { id: 'dashboard', label: 'Dashboard',        short: 'Home',      icon: Activity,   desc: 'Vue d\'ensemble' },
@@ -105,6 +107,7 @@ const GLOBAL_VIEWS: { id: GlobalView; label: string; short: string; icon: any; d
   { id: 'signals',   label: 'Signaux du Jour',  short: 'Signaux',   icon: Zap,        desc: 'Great Catch / Stay Away' },
   { id: 'news',      label: 'Actualités',       short: 'News',      icon: Rss,        desc: '15 sources FR + Monde' },
   { id: 'portfolio', label: 'Mon Portfolio',    short: 'Portfolio', icon: PieChart,   desc: 'Positions & P&L' },
+  { id: 'simulator', label: 'Labo Trading',     short: 'Labo',      icon: FlaskConical, desc: 'Portefeuille fictif 🧪' },
 ]
 
 // ── Lookup secteur/indice par symbole ─────────────────────────────────────────
@@ -461,6 +464,13 @@ export default function App() {
                 <OrderSimulator symbol="" currentPrice={undefined} />
               </Suspense>
             </>
+          )}
+
+          {/* ── Vue LABO TRADING (simulateur) ──────────────────────────── */}
+          {globalView === 'simulator' && (
+            <Suspense fallback={<LazyFallback />}>
+              <Simulator user={user} onSelectSymbol={handleSelectSymbol} />
+            </Suspense>
           )}
 
           {/* ── Vue VALEUR (stock-specific) ─────────────────────────── */}
