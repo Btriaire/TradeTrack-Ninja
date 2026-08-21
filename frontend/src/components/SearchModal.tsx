@@ -3,6 +3,7 @@ import { useQuery } from '@tanstack/react-query'
 import { Search, X, Plus, BookmarkPlus, Zap } from 'lucide-react'
 import { searchStocks } from '../services/api'
 import { calcLclFees, calcBreakeven, isPeaEligible } from '../utils/lcl-fees'
+import { ScrollFade } from './ScrollFade'
 import type { SearchResult, WatchlistItem, PortfolioPosition } from '../types'
 
 const MARKETS = [
@@ -113,7 +114,10 @@ export function SearchModal({
         </div>
 
         {/* Filtres marché */}
-        <div className="flex gap-1.5 px-4 py-2.5 border-b border-dark-700 overflow-x-auto scrollbar-none">
+        <ScrollFade
+          fadeFrom="from-dark-800"
+          className="flex gap-1.5 px-4 py-2.5 border-b border-dark-700 overflow-x-auto scrollbar-none"
+        >
           {MARKETS.map(m => (
             <button
               key={m.id}
@@ -128,7 +132,7 @@ export function SearchModal({
               <span>{m.label}</span>
             </button>
           ))}
-        </div>
+        </ScrollFade>
 
         {/* Résultats */}
         <div className="max-h-[60vh] overflow-y-auto">

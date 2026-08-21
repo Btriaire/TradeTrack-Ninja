@@ -19,6 +19,7 @@ import { StockPortfolioPanel }  from './components/StockPortfolioPanel'
 import { WelcomePage }          from './components/WelcomePage'
 import { TickerBanner }  from './components/TickerBanner'
 import { Dashboard }     from './components/Dashboard'
+import { ScrollFade }    from './components/ScrollFade'
 
 // ── Imports lazy — chargés seulement quand la vue/onglet est ouvert(e) ─────────
 // Réduit le bundle initial de ~1 MB → ~450 KB (chargement 2× plus rapide)
@@ -287,7 +288,10 @@ export default function App() {
 
       {/* ── Navigation globale ──────────────────────────────────────────── */}
       <div className={`border-b border-dark-700 bg-dark-900 shrink-0 ${isMobile ? 'px-2 py-2' : 'px-4 py-3'}`}>
-        <div className={`flex gap-1.5 ${isMobile ? 'overflow-x-auto scrollbar-none' : 'max-w-3xl gap-2'}`}>
+        <ScrollFade
+          fadeFrom="from-dark-900"
+          className={`flex gap-1.5 ${isMobile ? 'overflow-x-auto scrollbar-none' : 'max-w-3xl gap-2'}`}
+        >
           {GLOBAL_VIEWS.map(({ id, label, short, icon: Icon, desc }) => {
             const isActive = globalView === id
             const isPortfolio = id === 'portfolio'
@@ -342,7 +346,7 @@ export default function App() {
               </button>
             )
           })}
-        </div>
+        </ScrollFade>
       </div>
 
       {/* ── Bandeau ticker LCD ──────────────────────────────────────────── */}
@@ -508,7 +512,10 @@ export default function App() {
               )}
 
               {/* Onglets valeur */}
-              <div className={`flex gap-1 bg-dark-800 rounded-xl p-1 ${isMobile ? 'overflow-x-auto scrollbar-none' : ''}`}>
+              <ScrollFade
+                fadeFrom="from-dark-800"
+                className={`flex gap-1 bg-dark-800 rounded-xl p-1 ${isMobile ? 'overflow-x-auto scrollbar-none' : ''}`}
+              >
                 {STOCK_TABS.map(({ id, label, icon: Icon, highlight }) => (
                   <button key={id} onClick={() => setActiveTab(id)}
                     className={`flex items-center justify-center gap-1.5 py-2 rounded-lg text-xs font-semibold transition-colors shrink-0 ${
@@ -529,7 +536,7 @@ export default function App() {
                     }
                   </button>
                 ))}
-              </div>
+              </ScrollFade>
 
               {activeTab === 'magnify'    && <MagnifyPanel symbol={symbol} />}
               {activeTab === 'chart' && showIntraday && <IntradayChart symbol={symbol} />}

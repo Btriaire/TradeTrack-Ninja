@@ -191,29 +191,29 @@ export function Simulator({ user, onSelectSymbol }: Props) {
       {/* Header + capital */}
       <div className="rounded-2xl border border-cyan-500/30 bg-black overflow-hidden"
         style={{ boxShadow: '0 0 30px rgba(34,211,238,0.06)' }}>
-        <div className="px-4 py-3 border-b border-cyan-500/20 flex items-center justify-between">
-          <div className="flex items-center gap-2">
-            <FlaskConical size={16} className="text-cyan-400" />
-            <span className="text-sm font-bold text-cyan-300 font-mono tracking-wide">LABO TRADING</span>
+        <div className="px-4 py-3 border-b border-cyan-500/20 flex flex-col sm:flex-row sm:items-center sm:justify-between gap-2.5">
+          <div className="flex items-center gap-2 min-w-0">
+            <FlaskConical size={16} className="text-cyan-400 shrink-0" />
+            <span className="text-sm font-bold text-cyan-300 font-mono tracking-wide whitespace-nowrap">LABO TRADING</span>
             {positions.length > 0 && (
-              <span className="text-[10px] bg-cyan-500/10 text-cyan-500 px-2 py-0.5 rounded-full font-mono border border-cyan-500/20">
+              <span className="text-[10px] bg-cyan-500/10 text-cyan-500 px-2 py-0.5 rounded-full font-mono border border-cyan-500/20 whitespace-nowrap shrink-0">
                 {positions.length} position{positions.length > 1 ? 's' : ''}
               </span>
             )}
           </div>
-          <div className="flex items-center gap-2">
+          <div className="flex items-center gap-2 shrink-0">
             <button
               onClick={() => setConfirmReset(true)}
-              className="flex items-center gap-1 text-xs text-slate-600 hover:text-fuchsia-400 px-2 py-1.5 rounded-lg transition-colors font-mono"
+              className="flex items-center gap-1 text-xs text-slate-600 hover:text-fuchsia-400 p-1.5 rounded-lg transition-colors font-mono shrink-0"
               title="Réinitialiser le labo"
             >
               <RotateCcw size={12} />
             </button>
             <button
               onClick={() => setShowBuy(true)}
-              className="flex items-center gap-1 text-xs bg-cyan-500/15 hover:bg-cyan-500/25 border border-cyan-500/40 text-cyan-300 px-2.5 py-1.5 rounded-lg transition-colors font-mono"
+              className="flex-1 sm:flex-none flex items-center justify-center gap-1 text-xs bg-cyan-500/15 hover:bg-cyan-500/25 border border-cyan-500/40 text-cyan-300 px-2.5 py-1.5 rounded-lg transition-colors font-mono whitespace-nowrap"
             >
-              <Plus size={12} /> Acheter virtuellement
+              <Plus size={12} className="shrink-0" /> Acheter <span className="hidden sm:inline">virtuellement</span>
             </button>
           </div>
         </div>

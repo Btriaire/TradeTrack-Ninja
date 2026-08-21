@@ -1,5 +1,6 @@
 import { useQuery } from '@tanstack/react-query'
 import { getIndices } from '../services/api'
+import { ScrollFade } from './ScrollFade'
 import type { MarketIndex } from '../types'
 
 function IndexChip({ idx }: { idx: MarketIndex }) {
@@ -43,10 +44,12 @@ export function IndicesBar() {
   if (!indices.length) return null
 
   return (
-    <div className="border-b border-dark-700 px-2 py-1.5 overflow-x-auto scrollbar-none">
-      <div className="flex gap-1.5 w-max">
-        {indices.map(idx => <IndexChip key={idx.symbol} idx={idx} />)}
-      </div>
+    <div className="border-b border-dark-700">
+      <ScrollFade fadeFrom="from-dark-900" className="px-2 py-1.5 overflow-x-auto scrollbar-none">
+        <div className="flex gap-1.5 w-max">
+          {indices.map(idx => <IndexChip key={idx.symbol} idx={idx} />)}
+        </div>
+      </ScrollFade>
     </div>
   )
 }
