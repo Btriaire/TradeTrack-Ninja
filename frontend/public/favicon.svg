@@ -1,51 +1,18 @@
 <svg width="512" height="512" viewBox="0 0 512 512" xmlns="http://www.w3.org/2000/svg">
-  <defs>
-    <radialGradient id="bg" cx="50%" cy="42%" r="70%">
-      <stop offset="0%" stop-color="#141414"/>
-      <stop offset="100%" stop-color="#000000"/>
-    </radialGradient>
-    <radialGradient id="glow" cx="50%" cy="50%" r="50%">
-      <stop offset="0%" stop-color="#10b981" stop-opacity="0.35"/>
-      <stop offset="100%" stop-color="#10b981" stop-opacity="0"/>
-    </radialGradient>
-    <linearGradient id="bladeGreen" x1="0" y1="1" x2="0" y2="0">
-      <stop offset="0%" stop-color="#059669"/>
-      <stop offset="100%" stop-color="#34d399"/>
-    </linearGradient>
-    <linearGradient id="bladeRed" x1="0" y1="0" x2="0" y2="1">
-      <stop offset="0%" stop-color="#dc2626"/>
-      <stop offset="100%" stop-color="#f87171"/>
-    </linearGradient>
-    <linearGradient id="bladeBlue" x1="1" y1="0" x2="0" y2="0">
-      <stop offset="0%" stop-color="#2563eb"/>
-      <stop offset="100%" stop-color="#60a5fa"/>
-    </linearGradient>
-    <linearGradient id="bladeYellow" x1="0" y1="0" x2="1" y2="0">
-      <stop offset="0%" stop-color="#d97706"/>
-      <stop offset="100%" stop-color="#fbbf24"/>
-    </linearGradient>
-  </defs>
+  <rect width="512" height="512" rx="112" fill="#000000"/>
+  <rect x="3" y="3" width="506" height="506" rx="109" fill="none" stroke="#262626" stroke-width="6"/>
 
-  <!-- Fond -->
-  <rect width="512" height="512" fill="url(#bg)"/>
+  <!-- Assiette : le capital -->
+  <circle cx="256" cy="256" r="150" fill="none" stroke="#ffffff" stroke-width="26"/>
+  <circle cx="256" cy="256" r="104" fill="none" stroke="#ffffff" stroke-width="6" opacity="0.35"/>
 
-  <!-- Halo -->
-  <circle cx="256" cy="256" r="200" fill="url(#glow)"/>
-
-  <!-- Shuriken : 4 lames, une par couleur d'accent de l'appli -->
-  <g transform="translate(256,256)">
-    <!-- lame haute (vert = hausse) -->
-    <path d="M 0,-186 L 44,-70 L 0,-34 L -44,-70 Z" fill="url(#bladeGreen)"/>
-    <!-- lame droite (jaune = signal) -->
-    <path d="M 186,0 L 70,44 L 34,0 L 70,-44 Z" fill="url(#bladeYellow)"/>
-    <!-- lame basse (rouge = baisse) -->
-    <path d="M 0,186 L -44,70 L 0,34 L 44,70 Z" fill="url(#bladeRed)"/>
-    <!-- lame gauche (bleu = info) -->
-    <path d="M -186,0 L -70,-44 L -34,0 L -70,44 Z" fill="url(#bladeBlue)"/>
-
-    <!-- moyeu central -->
-    <circle r="40" fill="#000000"/>
-    <circle r="40" fill="none" stroke="#1a1a1a" stroke-width="3"/>
-    <circle r="15" fill="#0a0a0a" stroke="#242424" stroke-width="2"/>
+  <!-- Chandeliers : la progression du marché -->
+  <g stroke="#ffffff" stroke-width="10" stroke-linecap="round">
+    <line x1="196" y1="276" x2="196" y2="330"/>
+    <line x1="256" y1="236" x2="256" y2="300"/>
+    <line x1="316" y1="186" x2="316" y2="250"/>
   </g>
+  <rect x="180" y="290" width="32" height="28" rx="4" fill="#ffffff"/>
+  <rect x="240" y="252" width="32" height="34" rx="4" fill="#ffffff"/>
+  <rect x="300" y="208" width="32" height="34" rx="4" fill="#ffffff"/>
 </svg>
