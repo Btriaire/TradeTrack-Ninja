@@ -192,3 +192,54 @@ def yf_targets(symbol):
         }
     except Exception:
         return {"symbol": symbol, "error": "not available"}
+
+
+def yf_profile(symbol):
+    cookie, crumb = _get_yf_crumb()
+    if not crumb:
+        return {"symbol": symbol, "error": "not available"}
+    try:
+        headers = dict(YF_HEADERS)
+        if cookie: headers["Cookie"] = cookie
+        url = f"https://query1.finance.yahoo.com/v10/finance/quoteSummary/{symbol}"
+        mods = "assetProfile,summaryDetail,defaultKeyStatistics,financialData,price"
+        r = httpx.get(url, params={"modules": mods, "crumb": crumb}, headers=headers, timeout=10)
+        res = r.json().get("quoteSummary", {}).get("result")
+        if not res:
+            return {"symbol": symbol, "error": "not available"}
+        m = res[0]
+        ap, sd, ks, fd, pr = (m.get(k) or {} for k in ("assetProfile", "summaryDetail", "defaultKeyStatistics", "financialData", "price"))
+        def raw(d, k):
+            v = d.get(k)
+            return v.get("raw") if isinstance(v, dict) else v
+        officers = ap.get("companyOfficers") or []
+        return {
+            "symbol": symbol,
+            "name": pr.get("longName") or pr.get("shortName"),
+            "currency": pr.get("currency") or "EUR",
+            "sector": ap.get("sector"),
+            "industry": ap.get("industry"),
+            "country": ap.get("country"),
+            "city": ap.get("city"),
+            "website": ap.get("website"),
+            "description": ap.get("longBusinessSummary"),
+            "ceo": officers[0].get("name") if officers else None,
+            "employees": clean(ap.get("fullTimeEmployees")),
+            "market_cap": clean(raw(pr, "marketCap")),
+            "enterprise_value": clean(raw(ks, "enterpriseValue")),
+            "beta": clean(raw(sd, "beta")),
+            "pe_trailing": clean(raw(sd, "trailingPE")),
+            "pe_forward": clean(raw(ks, "forwardPE")),
+            "peg_ratio": clean(raw(ks, "pegRatio")),
+            "price_to_book": clean(raw(ks, "priceToBook")),
+            "dividend_yield": clean(raw(sd, "dividendYield")),
+            "debt_to_equity": clean(raw(fd, "debtToEquity")),
+            "current_ratio": clean(raw(fd, "currentRatio")),
+            "roe": clean(raw(fd, "returnOnEquity")),
+            "profit_margin": clean(raw(fd, "profitMargins")),
+            "revenue": clean(raw(fd, "totalRevenue")),
+            "revenue_growth": clean(raw(fd, "revenueGrowth")),
+            "ebitda": clean(raw(fd, "ebitda")),
+        }
+    except Exception:
+        return {"symbol": symbol, "error": "not available"}

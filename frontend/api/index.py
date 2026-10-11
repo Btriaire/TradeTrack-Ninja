@@ -12,7 +12,7 @@ import httpx
 
 sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
 from _yf import (cors, qs_params, yf_quote, yf_history, yf_indicators,
-                 yf_batch, yf_chart, yf_targets, YF_HEADERS, clean)
+                 yf_batch, yf_chart, yf_targets, yf_profile, YF_HEADERS, clean)
 
 # ── Données stocks ────────────────────────────────────────────────────────────
 INDICES = {"CAC 40":"^FCHI","DAX":"^GDAXI","S&P 500":"^GSPC","NASDAQ":"^IXIC",
@@ -293,13 +293,6 @@ def compute_sector_scan():
 
 SECTOR_ETFS = {"Technologie":"XLK","Énergie":"XLE","Finance":"XLF","Santé":"XLV",
     "Consommation":"XLY","Industrie":"XLI","Luxe & Mode":"MC.PA","Chimie":"AI.PA","Infrastructures":"DG.PA"}
-GEO_EVENTS = [
-    {"id":"fed1","type":"banque_centrale","title":"Fed — Décision taux","description":"La Fed maintient ses taux entre 4.25-4.50%.","impact":"medium","region":"USA","date":"2025-06"},
-    {"id":"bce1","type":"banque_centrale","title":"BCE — Politique monétaire","description":"La BCE en phase de désinflation progressive.","impact":"medium","region":"Europe","date":"2025-06"},
-    {"id":"trade1","type":"commerce","title":"Tensions commerciales","description":"Droits de douane américains sur les importations chinoises et européennes.","impact":"high","region":"Global","date":"2025-06"},
-    {"id":"ukraine1","type":"geopolitique","title":"Conflit Ukraine","description":"Impact sur les prix de l'énergie et les chaînes d'approvisionnement.","impact":"high","region":"Europe","date":"2025-06"},
-    {"id":"cac1","type":"marche","title":"CAC 40 — Contexte","description":"Marchés européens sous pression liée aux incertitudes macroéconomiques.","impact":"medium","region":"France","date":"2025-06"},
-]
 
 # ── Données simulateur ────────────────────────────────────────────────────────
 TARIFS = {"courtage_min":0.90,"courtage_pct":0.001,"ttf_pct":0.003,"garde_annuel_pct":0.005}
@@ -482,7 +475,7 @@ class handler(BaseHTTPRequestHandler):
         if s0 == "targets" and len(segs) >= 2:
             return self._send(yf_targets(segs[1]))
         if s0 == "profile" and len(segs) >= 2:
-            return self._send({"symbol":segs[1],"error":"not available"})
+            return self._send(yf_profile(segs[1]))
         self._send({"error":"not found"}, 404)
 
     # ── News ────────────────────────────────────────────────────────────────
@@ -509,7 +502,7 @@ class handler(BaseHTTPRequestHandler):
     def _signals_get(self, segs, params):
         sub = segs[0] if segs else ""
         if sub == "geo-events":
-            return self._send(GEO_EVENTS)
+            return self._send({"events": [], "synthesis": None})
         if sub == "top-sectors":
             from concurrent.futures import ThreadPoolExecutor, as_completed
             results = []
