@@ -7,10 +7,10 @@ import { useState, useMemo } from 'react'
 import { useQuery } from '@tanstack/react-query'
 import {
   PieChart, Plus, Trash2,
-  ChevronRight, Receipt, PackagePlus, Check, Zap, Pencil, Banknote,
+  ChevronRight, Receipt, PackagePlus, Check, Pencil, Banknote,
 } from 'lucide-react'
 import { getQuote } from '../services/api'
-import { calcLclFees, calcBreakeven } from '../utils/lcl-fees'
+import { calcBreakeven } from '../utils/lcl-fees'
 import { PositionEditForm } from './PositionEditForm'
 import { SellPositionForm, type SellResult } from './SellPositionForm'
 import type { PortfolioPosition } from '../types'
@@ -207,18 +207,14 @@ function AddForm({
 }) {
   const [qty,       setQty]       = useState('1')
   const [price,     setPrice]     = useState(livePrice ? livePrice.toFixed(2) : '')
-  const [feesAuto,  setFeesAuto]  = useState(true)   // frais LCL auto par défaut
-  const [feesManual, setFeesManual] = useState('')
+  const [fees, setFees] = useState('')
 
   const q = parseFloat(qty)        || 0
   const p = parseFloat(price)      || 0
 
-  // Calcul automatique frais LCL
-  const lcl = useMemo(() => calcLclFees(symbol, q, p), [symbol, q, p])
-
-  const fees      = feesAuto ? lcl.total : (parseFloat(feesManual) || 0)
-  const totalCost = q * p + fees
-  const breakeven = calcBreakeven(p, q, fees)
+  const feesVal   = parseFloat(fees) || 0
+  const totalCost = q * p + feesVal
+  const breakeven = calcBreakeven(p, q, feesVal)
 
   function handleConfirm() {
     if (!q || !p) return
@@ -228,7 +224,7 @@ function AddForm({
       quantity:  q,
       buy_price: p,
       buy_date:  new Date().toISOString().split('T')[0],
-      fees:      fees > 0 ? fees : undefined,
+      fees:      feesVal > 0 ? feesVal : undefined,
     })
   }
 
@@ -256,75 +252,16 @@ function AddForm({
         </div>
       </div>
 
-      {/* Frais — toggle auto/manuel */}
-      <div className="bg-dark-700/50 rounded-xl border border-dark-600 overflow-hidden">
-        {/* Toggle */}
-        <div className="flex items-center justify-between px-3 py-2 border-b border-dark-600">
-          <div className="flex items-center gap-2">
-            <Zap size={11} className="text-amber-400" />
-            <span className="text-xs font-semibold text-slate-300">Frais LCL Bourse</span>
-          </div>
-          <button
-            onClick={() => setFeesAuto(v => !v)}
-            className={`flex items-center gap-1.5 text-[10px] px-2 py-1 rounded-lg transition-colors font-mono ${
-              feesAuto
-                ? 'bg-amber-500/20 text-amber-400 border border-amber-500/30'
-                : 'bg-dark-600 text-slate-500 border border-dark-500'
-            }`}
-          >
-            {feesAuto ? '⚡ Auto LCL' : '✏️ Manuel'}
-          </button>
-        </div>
-
-        {/* Détail automatique */}
-        {feesAuto && q > 0 && p > 0 && (
-          <div className="px-3 py-2 space-y-1 text-[11px] font-mono">
-            <div className="flex justify-between text-slate-500">
-              <span>Montant ordre</span>
-              <span className="text-slate-300">{fmtEur(q * p, 2)}</span>
-            </div>
-            <div className="flex justify-between text-slate-500">
-              <span>Courtage internet</span>
-              <span className="text-slate-300">{fmtEur(lcl.courtage, 2)}</span>
-            </div>
-            {lcl.ttf > 0 && (
-              <div className="flex justify-between text-slate-500">
-                <span>TTF (0,30% achat FR)</span>
-                <span className="text-slate-300">{fmtEur(lcl.ttf, 2)}</span>
-              </div>
-            )}
-            {lcl.stampDuty > 0 && (
-              <div className="flex justify-between text-slate-500">
-                <span>Stamp duty UK (0,50%)</span>
-                <span className="text-slate-300">{fmtEur(lcl.stampDuty, 2)}</span>
-              </div>
-            )}
-            <div className="flex justify-between font-bold border-t border-dark-600 pt-1 mt-1">
-              <span className="text-amber-500">Total frais</span>
-              <span className="text-amber-400">{fmtEur(lcl.total, 2)}
-                <span className="text-[9px] opacity-60 ml-1">({lcl.tauxEffectif.toFixed(2)}%)</span>
-              </span>
-            </div>
-          </div>
-        )}
-        {feesAuto && (!q || !p) && (
-          <div className="px-3 py-2 text-[10px] text-slate-600 font-mono">
-            Saisissez qté + prix pour calculer automatiquement
-          </div>
-        )}
-
-        {/* Saisie manuelle */}
-        {!feesAuto && (
-          <div className="px-3 py-2">
-            <input
-              type="number" min="0" step="0.01" value={feesManual}
-              onChange={e => setFeesManual(e.target.value)}
-              placeholder="Frais réels (€)"
-              className="w-full bg-dark-600 text-white text-sm rounded-lg px-3 py-2 outline-none
-                border border-dark-500 focus:border-amber-500 font-mono"
-            />
-          </div>
-        )}
+      {/* Frais (optionnel) */}
+      <div className="bg-dark-700/50 rounded-xl border border-dark-600 px-3 py-2">
+        <label className="text-[10px] text-slate-500 uppercase tracking-wider block mb-1">Frais (€, optionnel)</label>
+        <input
+          type="number" min="0" step="0.01" value={fees}
+          onChange={e => setFees(e.target.value)}
+          placeholder="0"
+          className="w-full bg-dark-600 text-white text-sm rounded-lg px-3 py-2 outline-none
+            border border-dark-500 focus:border-amber-500 font-mono"
+        />
       </div>
 
       {/* Récap coût total + seuil de rentabilité */}
