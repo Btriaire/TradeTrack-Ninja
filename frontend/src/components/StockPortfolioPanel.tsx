@@ -207,7 +207,7 @@ function AddForm({
 }) {
   const [qty,       setQty]       = useState('1')
   const [price,     setPrice]     = useState(livePrice ? livePrice.toFixed(2) : '')
-  const [feesAuto,  setFeesAuto]  = useState(true)   // frais LCL auto par défaut
+  const [feesAuto,  setFeesAuto]  = useState(false)  // frais optionnels, désactivés par défaut
   const [feesManual, setFeesManual] = useState('')
 
   const q = parseFloat(qty)        || 0
